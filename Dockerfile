@@ -23,6 +23,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 5. 复制应用代码 (结构同您的 OCR-HFS)
 COPY main.py .
 COPY entrypoint.sh .
+COPY static/ ./static/
+COPY templates/ ./templates/
 RUN chmod +x /app/entrypoint.sh
 
 # 6. 创建临时工作目录 (结构同您的 OCR-HFS)
