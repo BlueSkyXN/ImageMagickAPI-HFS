@@ -296,12 +296,12 @@ HTML_UPLOAD_PAGE = """
             <div class="form-group">
                 <label for="target_format">目标格式</label>
                 <select name="target_format" id="target_format" required>
-                    <option value="webp" selected>WebP - 现代高效格式</option>
+                    <option value="webp">WebP - 现代高效格式</option>
                     <option value="avif">AVIF - 最新一代格式</option>
                     <option value="jpeg">JPEG - 经典有损格式</option>
                     <option value="png">PNG - 无损格式</option>
                     <option value="gif">GIF - 动画格式</option>
-                    <option value="heif">HEIF - 高效图像格式</option>
+                    <option value="heif" selected>HEIF - 高效图像格式</option>
                 </select>
             </div>
 
@@ -309,11 +309,11 @@ HTML_UPLOAD_PAGE = """
                 <label>转换模式</label>
                 <div class="radio-group">
                     <label class="radio-label">
-                        <input type="radio" name="mode" value="lossy" checked>
+                        <input type="radio" name="mode" value="lossy">
                         有损压缩 (更小体积)
                     </label>
                     <label class="radio-label">
-                        <input type="radio" name="mode" value="lossless">
+                        <input type="radio" name="mode" value="lossless" checked>
                         无损压缩 (保持质量)
                     </label>
                 </div>
@@ -322,11 +322,11 @@ HTML_UPLOAD_PAGE = """
             <div class="form-group">
                 <label for="setting">质量参数</label>
                 <div class="slider-container">
-                    <input type="range" name="setting" id="setting" min="0" max="100" value="80">
-                    <span class="slider-value" id="settingValue">80</span>
+                    <input type="range" name="setting" id="setting" min="0" max="100" value="0">
+                    <span class="slider-value" id="settingValue">0</span>
                 </div>
                 <div class="param-hint" id="paramHint">
-                    质量: 80 - 高质量 (0=最低质量，100=最高质量)
+                    压缩速度: 0 - 最慢/最佳压缩 (0=最慢/最佳，100=最快/最差)
                 </div>
             </div>
 
@@ -381,7 +381,19 @@ HTML_UPLOAD_PAGE = """
         }
 
         slider.addEventListener('input', updateHint);
-        modeRadios.forEach(radio => radio.addEventListener('change', updateHint));
+
+        // 当模式切换时，自动调整质量值
+        modeRadios.forEach(radio => radio.addEventListener('change', function() {
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            if (mode === 'lossless') {
+                // 无损模式：默认最佳质量（0=最慢/最佳压缩）
+                slider.value = 0;
+            } else {
+                // 有损模式：默认中等质量（50=中等质量）
+                slider.value = 50;
+            }
+            updateHint();
+        }));
 
         // 表单提交处理
         const form = document.getElementById('uploadForm');
@@ -688,9 +700,9 @@ async def _perform_conversion(
 async def upload_convert(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="要转换的图像文件"),
-    target_format: str = Form("webp", description="目标格式"),
-    mode: str = Form("lossy", description="转换模式"),
-    setting: int = Form(80, ge=0, le=100, description="质量参数")
+    target_format: str = Form("heif", description="目标格式"),
+    mode: str = Form("lossless", description="转换模式"),
+    setting: int = Form(0, ge=0, le=100, description="质量参数")
 ):
     """
     通过HTML表单上传并转换图像。
