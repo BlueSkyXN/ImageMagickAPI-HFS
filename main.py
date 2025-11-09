@@ -21,9 +21,12 @@ from fastapi import (
     HTTPException,
     BackgroundTasks,
     Path,
-    Form
+    Form,
+    Request
 )
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 import subprocess
 import asyncio
 import tempfile
@@ -62,6 +65,12 @@ app = FastAPI(
     description="通过 Web 界面或 API 实现多种格式的(无)损图像转换，支持动图。提供现代化图形上传界面和灵活的 RESTful API。",
     version="4.0.0"
 )
+
+# 挂载静态文件目录（CSS、JS等）
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 配置模板引擎
+templates = Jinja2Templates(directory="templates")
 
 # 启动时确保临时目录存在
 os.makedirs(TEMP_DIR, exist_ok=True)
@@ -103,321 +112,15 @@ def cleanup_temp_dir(temp_dir: str):
     except Exception as cleanup_error:
         logger.error(f"后台清理：删除 {temp_dir} 失败: {cleanup_error}", exc_info=True)
 
-# --- 5. HTML 模板 ---
+# --- 5. API 端点 ---
 
-HTML_UPLOAD_PAGE = """
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Magick 图像转换器</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .container {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 600px;
-            width: 100%;
-            padding: 40px;
-        }
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 28px;
-            text-align: center;
-        }
-        .subtitle {
-            color: #666;
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 14px;
-        }
-        .form-group {
-            margin-bottom: 25px;
-        }
-        label {
-            display: block;
-            color: #333;
-            font-weight: 600;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-        .file-input-wrapper {
-            position: relative;
-            border: 2px dashed #667eea;
-            border-radius: 10px;
-            padding: 30px;
-            text-align: center;
-            background: #f8f9ff;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .file-input-wrapper:hover {
-            border-color: #764ba2;
-            background: #f0f2ff;
-        }
-        .file-input-wrapper input[type="file"] {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            top: 0;
-            left: 0;
-            opacity: 0;
-            cursor: pointer;
-        }
-        .file-label {
-            color: #667eea;
-            font-weight: 600;
-        }
-        select, input[type="range"] {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-        select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        .radio-group {
-            display: flex;
-            gap: 20px;
-        }
-        .radio-label {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-            font-weight: normal;
-        }
-        .radio-label input[type="radio"] {
-            margin-right: 8px;
-            cursor: pointer;
-        }
-        .slider-container {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        input[type="range"] {
-            flex: 1;
-        }
-        .slider-value {
-            min-width: 45px;
-            text-align: center;
-            font-weight: 600;
-            color: #667eea;
-            font-size: 18px;
-        }
-        .param-hint {
-            background: #f0f2ff;
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 13px;
-            color: #555;
-            margin-top: 10px;
-            border-left: 4px solid #667eea;
-        }
-        .submit-btn {
-            width: 100%;
-            padding: 15px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .submit-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-        }
-        .submit-btn:active {
-            transform: translateY(0);
-        }
-        .links {
-            margin-top: 25px;
-            text-align: center;
-            padding-top: 25px;
-            border-top: 1px solid #e0e0e0;
-        }
-        .links a {
-            color: #667eea;
-            text-decoration: none;
-            margin: 0 15px;
-            font-size: 14px;
-            font-weight: 500;
-        }
-        .links a:hover {
-            text-decoration: underline;
-        }
-        .selected-file {
-            margin-top: 10px;
-            color: #28a745;
-            font-size: 13px;
-            font-weight: 500;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🧙‍♂️ Magick 图像转换器</h1>
-        <p class="subtitle">支持多格式转换 | 有损/无损模式 | 支持动画图像</p>
-
-        <form id="uploadForm" action="/" method="POST" enctype="multipart/form-data">
-            <div class="form-group">
-                <label>选择图像文件</label>
-                <div class="file-input-wrapper">
-                    <input type="file" name="file" id="fileInput" accept="image/*" required>
-                    <div class="file-label">
-                        📁 点击选择或拖拽文件到此处
-                        <div style="font-size: 12px; color: #999; margin-top: 8px;">
-                            支持 JPG, PNG, GIF, WebP, AVIF, HEIF 等格式
-                        </div>
-                    </div>
-                </div>
-                <div id="selectedFile" class="selected-file"></div>
-            </div>
-
-            <div class="form-group">
-                <label for="target_format">目标格式</label>
-                <select name="target_format" id="target_format" required>
-                    <option value="webp">WebP - 现代高效格式</option>
-                    <option value="avif">AVIF - 最新一代格式</option>
-                    <option value="jpeg">JPEG - 经典有损格式</option>
-                    <option value="png">PNG - 无损格式</option>
-                    <option value="gif">GIF - 动画格式</option>
-                    <option value="heif" selected>HEIF - 高效图像格式</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>转换模式</label>
-                <div class="radio-group">
-                    <label class="radio-label">
-                        <input type="radio" name="mode" value="lossy">
-                        有损压缩 (更小体积)
-                    </label>
-                    <label class="radio-label">
-                        <input type="radio" name="mode" value="lossless" checked>
-                        无损压缩 (保持质量)
-                    </label>
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label for="setting">质量参数</label>
-                <div class="slider-container">
-                    <input type="range" name="setting" id="setting" min="0" max="100" value="0">
-                    <span class="slider-value" id="settingValue">0</span>
-                </div>
-                <div class="param-hint" id="paramHint">
-                    压缩速度: 0 - 最慢/最佳压缩 (0=最慢/最佳，100=最快/最差)
-                </div>
-            </div>
-
-            <button type="submit" class="submit-btn">🚀 开始转换</button>
-        </form>
-
-        <div class="links">
-            <a href="/docs" target="_blank">📖 API 文档</a>
-            <a href="/health" target="_blank">🏥 健康检查</a>
-        </div>
-    </div>
-
-    <script>
-        // 文件选择提示
-        const fileInput = document.getElementById('fileInput');
-        const selectedFile = document.getElementById('selectedFile');
-
-        fileInput.addEventListener('change', function() {
-            if (this.files.length > 0) {
-                selectedFile.textContent = '✓ 已选择: ' + this.files[0].name;
-            }
-        });
-
-        // 滑块实时更新
-        const slider = document.getElementById('setting');
-        const sliderValue = document.getElementById('settingValue');
-        const paramHint = document.getElementById('paramHint');
-        const modeRadios = document.querySelectorAll('input[name="mode"]');
-
-        function updateHint() {
-            const mode = document.querySelector('input[name="mode"]:checked').value;
-            const value = slider.value;
-            sliderValue.textContent = value;
-
-            if (mode === 'lossy') {
-                let quality = '中等';
-                if (value >= 90) quality = '极高';
-                else if (value >= 80) quality = '高';
-                else if (value >= 60) quality = '中等';
-                else if (value >= 40) quality = '中低';
-                else quality = '低';
-                paramHint.textContent = `质量: ${value} - ${quality}质量 (0=最低质量，100=最高质量)`;
-            } else {
-                let speed = '平衡';
-                if (value <= 20) speed = '最慢/最佳压缩';
-                else if (value <= 40) speed = '较慢/较好压缩';
-                else if (value <= 60) speed = '平衡';
-                else if (value <= 80) speed = '较快/较差压缩';
-                else speed = '最快/最差压缩';
-                paramHint.textContent = `压缩速度: ${value} - ${speed} (0=最慢/最佳，100=最快/最差)`;
-            }
-        }
-
-        slider.addEventListener('input', updateHint);
-
-        // 当模式切换时，自动调整质量值
-        modeRadios.forEach(radio => radio.addEventListener('change', function() {
-            const mode = document.querySelector('input[name="mode"]:checked').value;
-            if (mode === 'lossless') {
-                // 无损模式：默认最佳质量（0=最慢/最佳压缩）
-                slider.value = 0;
-            } else {
-                // 有损模式：默认中等质量（50=中等质量）
-                slider.value = 50;
-            }
-            updateHint();
-        }));
-
-        // 表单提交处理
-        const form = document.getElementById('uploadForm');
-        const submitBtn = form.querySelector('.submit-btn');
-        const originalBtnText = submitBtn.textContent;
-
-        form.addEventListener('submit', function() {
-            submitBtn.textContent = '⏳ 转换中...';
-            submitBtn.disabled = true;
-        });
-    </script>
-</body>
-</html>
-"""
-
-# --- 6. API 端点 ---
-
-@app.get("/", response_class=HTMLResponse, summary="上传界面")
-async def root():
+@app.get("/", summary="上传界面")
+async def root(request: Request):
     """
     返回用户友好的HTML上传表单页面。
-    提供图形化界面进行图像转换，无需编程知识。
+    提供图形化界面进行图像转换，支持4套主题切换。
     """
-    return HTML_UPLOAD_PAGE
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/health", summary="服务健康检查")
 async def health_check():
