@@ -1,0 +1,556 @@
+/* ========================================
+   基础样式重置
+   ======================================== */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* ========================================
+   主题 1: Apple Style (经典苹果风)
+   ======================================== */
+:root,
+[data-theme="apple"] {
+    --bg-primary: #f5f5f7;
+    --bg-container: #ffffff;
+    --bg-input: #ffffff;
+    --bg-input-hover: #f9f9f9;
+    --bg-hint: #f5f5f7;
+
+    --color-primary: #0071e3;
+    --color-primary-hover: #0077ed;
+    --color-accent: #06c;
+    --color-success: #30d158;
+
+    --text-primary: #1d1d1f;
+    --text-secondary: #86868b;
+    --text-hint: #6e6e73;
+
+    --border-color: #d2d2d7;
+    --border-focus: #0071e3;
+
+    --shadow-sm: 0 2px 16px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.12);
+    --shadow-hover: 0 8px 32px rgba(0, 0, 0, 0.16);
+
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 18px;
+
+    --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ========================================
+   主题 2: Glassmorphism (玻璃拟态)
+   ======================================== */
+[data-theme="glass"] {
+    --bg-primary: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    --bg-container: rgba(255, 255, 255, 0.1);
+    --bg-input: rgba(255, 255, 255, 0.05);
+    --bg-input-hover: rgba(255, 255, 255, 0.15);
+    --bg-hint: rgba(255, 255, 255, 0.08);
+
+    --color-primary: #00d4ff;
+    --color-primary-hover: #00bfea;
+    --color-accent: #0099ff;
+    --color-success: #00ff88;
+
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.7);
+    --text-hint: rgba(255, 255, 255, 0.6);
+
+    --border-color: rgba(255, 255, 255, 0.18);
+    --border-focus: rgba(255, 255, 255, 0.4);
+
+    --shadow-sm: 0 8px 32px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 12px 48px rgba(0, 0, 0, 0.4);
+    --shadow-hover: 0 16px 64px rgba(0, 0, 0, 0.5);
+
+    --radius-sm: 12px;
+    --radius-md: 16px;
+    --radius-lg: 20px;
+
+    --transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --glass-blur: blur(10px);
+}
+
+/* ========================================
+   主题 3: Minimal Monochrome (极简黑白)
+   ======================================== */
+[data-theme="minimal"] {
+    --bg-primary: #fafafa;
+    --bg-container: #ffffff;
+    --bg-input: #ffffff;
+    --bg-input-hover: #f5f5f5;
+    --bg-hint: #f9f9f9;
+
+    --color-primary: #0066ff;
+    --color-primary-hover: #0052cc;
+    --color-accent: #000000;
+    --color-success: #000000;
+
+    --text-primary: #000000;
+    --text-secondary: #666666;
+    --text-hint: #999999;
+
+    --border-color: #e5e5e5;
+    --border-focus: #000000;
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+    --shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+
+    --transition: all 0.2s ease;
+}
+
+/* ========================================
+   主题 4: Tech Gradient (现代科技)
+   ======================================== */
+[data-theme="tech"] {
+    --bg-primary: linear-gradient(135deg, #e0e7ff 0%, #f0f4f8 100%);
+    --bg-container: rgba(255, 255, 255, 0.9);
+    --bg-input: #ffffff;
+    --bg-input-hover: #f8fafc;
+    --bg-hint: #f1f5f9;
+
+    --color-primary: #3b82f6;
+    --color-primary-hover: #2563eb;
+    --color-accent: #6366f1;
+    --color-success: #10b981;
+
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --text-hint: #94a3b8;
+
+    --border-color: #cbd5e1;
+    --border-focus: #3b82f6;
+
+    --shadow-sm: 0 4px 12px rgba(59, 130, 246, 0.1);
+    --shadow-md: 0 8px 24px rgba(59, 130, 246, 0.15);
+    --shadow-hover: 0 12px 32px rgba(59, 130, 246, 0.2);
+
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 18px;
+
+    --transition: all 0.3s ease-out;
+}
+
+/* ========================================
+   全局布局
+   ======================================== */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg-primary);
+    min-height: 100vh;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+}
+
+/* 玻璃主题特殊处理 */
+[data-theme="glass"] body,
+[data-theme="tech"] body {
+    background-image: var(--bg-primary);
+}
+
+.container {
+    background: var(--bg-container);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    max-width: 600px;
+    width: 100%;
+    padding: 40px;
+    transition: var(--transition);
+}
+
+/* 玻璃效果 */
+[data-theme="glass"] .container {
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--border-color);
+}
+
+/* ========================================
+   主题切换器
+   ======================================== */
+.theme-switcher {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    gap: 8px;
+    background: var(--bg-container);
+    padding: 8px;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    z-index: 1000;
+}
+
+[data-theme="glass"] .theme-switcher {
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--border-color);
+}
+
+.theme-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 12px;
+    background: transparent;
+    border: 2px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition);
+    color: var(--text-primary);
+}
+
+.theme-btn:hover {
+    background: var(--bg-input-hover);
+    border-color: var(--color-primary);
+}
+
+.theme-btn.active {
+    background: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+}
+
+.theme-icon {
+    font-size: 20px;
+}
+
+.theme-name {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* ========================================
+   标题和文字
+   ======================================== */
+h1 {
+    color: var(--text-primary);
+    margin-bottom: 10px;
+    font-size: 28px;
+    text-align: center;
+    font-weight: 700;
+    transition: var(--transition);
+}
+
+.subtitle {
+    color: var(--text-secondary);
+    text-align: center;
+    margin-bottom: 30px;
+    font-size: 14px;
+    transition: var(--transition);
+}
+
+/* ========================================
+   表单元素
+   ======================================== */
+.form-group {
+    margin-bottom: 25px;
+}
+
+label {
+    display: block;
+    color: var(--text-primary);
+    font-weight: 600;
+    margin-bottom: 8px;
+    font-size: 14px;
+    transition: var(--transition);
+}
+
+/* 文件上传区域 */
+.file-input-wrapper {
+    position: relative;
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 30px;
+    text-align: center;
+    background: var(--bg-input);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.file-input-wrapper:hover {
+    border-color: var(--color-primary);
+    background: var(--bg-input-hover);
+}
+
+.file-input-wrapper input[type="file"] {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.file-label {
+    color: var(--color-primary);
+    font-weight: 600;
+    transition: var(--transition);
+}
+
+.file-hint {
+    font-size: 12px;
+    color: var(--text-hint);
+    margin-top: 8px;
+}
+
+.selected-file {
+    margin-top: 10px;
+    color: var(--color-success);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* 下拉选择框 */
+select {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    transition: var(--transition);
+    cursor: pointer;
+}
+
+select:focus {
+    outline: none;
+    border-color: var(--border-focus);
+}
+
+/* 单选按钮组 */
+.radio-group {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-weight: normal;
+    color: var(--text-primary);
+    transition: var(--transition);
+}
+
+.radio-label input[type="radio"] {
+    margin-right: 8px;
+    cursor: pointer;
+    accent-color: var(--color-primary);
+}
+
+/* 滑块 */
+.slider-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+input[type="range"] {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border-color);
+    outline: none;
+    -webkit-appearance: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 8px rgba(0, 113, 227, 0.1);
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    cursor: pointer;
+    border: none;
+}
+
+.slider-value {
+    min-width: 45px;
+    text-align: center;
+    font-weight: 700;
+    color: var(--color-primary);
+    font-size: 18px;
+    transition: var(--transition);
+}
+
+/* 参数提示 */
+.param-hint {
+    background: var(--bg-hint);
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    color: var(--text-hint);
+    margin-top: 10px;
+    border-left: 4px solid var(--color-primary);
+    transition: var(--transition);
+}
+
+/* ========================================
+   按钮
+   ======================================== */
+.submit-btn {
+    width: 100%;
+    padding: 15px;
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    box-shadow: var(--shadow-sm);
+}
+
+.submit-btn:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+}
+
+.submit-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Minimal 主题按钮特殊样式 */
+[data-theme="minimal"] .submit-btn {
+    background: var(--text-primary);
+}
+
+[data-theme="minimal"] .submit-btn:hover:not(:disabled) {
+    background: var(--color-primary);
+}
+
+/* ========================================
+   底部链接
+   ======================================== */
+.links {
+    margin-top: 25px;
+    text-align: center;
+    padding-top: 25px;
+    border-top: 1px solid var(--border-color);
+}
+
+.links a {
+    color: var(--color-primary);
+    text-decoration: none;
+    margin: 0 15px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: var(--transition);
+}
+
+.links a:hover {
+    text-decoration: underline;
+    color: var(--color-primary-hover);
+}
+
+/* ========================================
+   响应式设计
+   ======================================== */
+@media (max-width: 768px) {
+    .container {
+        padding: 30px 20px;
+    }
+
+    .theme-switcher {
+        top: 10px;
+        right: 10px;
+        padding: 6px;
+        gap: 6px;
+    }
+
+    .theme-btn {
+        padding: 8px 10px;
+    }
+
+    .theme-icon {
+        font-size: 18px;
+    }
+
+    .theme-name {
+        font-size: 10px;
+    }
+
+    h1 {
+        font-size: 24px;
+    }
+
+    .radio-group {
+        flex-direction: column;
+        gap: 12px;
+    }
+}
+
+/* ========================================
+   动画效果
+   ======================================== */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.container {
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* 主题切换过渡动画 */
+body,
+.container,
+h1,
+.subtitle,
+label,
+.file-label,
+.radio-label,
+.slider-value,
+.param-hint,
+select,
+.submit-btn,
+.links a {
+    transition: var(--transition);
+}

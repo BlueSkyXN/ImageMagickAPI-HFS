@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magick 图像转换器</title>
+    <link rel="stylesheet" href="/static/css/themes.css">
+</head>
+<body>
+    <!-- 主题切换器 -->
+    <div class="theme-switcher">
+        <button class="theme-btn" data-theme="apple">
+            <span class="theme-icon">🍎</span>
+            <span class="theme-name">Apple</span>
+        </button>
+        <button class="theme-btn" data-theme="glass">
+            <span class="theme-icon">💎</span>
+            <span class="theme-name">Glass</span>
+        </button>
+        <button class="theme-btn" data-theme="minimal">
+            <span class="theme-icon">🖤</span>
+            <span class="theme-name">Minimal</span>
+        </button>
+        <button class="theme-btn" data-theme="tech">
+            <span class="theme-icon">🚀</span>
+            <span class="theme-name">Tech</span>
+        </button>
+    </div>
+
+    <div class="container">
+        <h1>🧙‍♂️ Magick 图像转换器</h1>
+        <p class="subtitle">支持多格式转换 | 有损/无损模式 | 支持动画图像</p>
+
+        <form id="uploadForm" action="/" method="POST" enctype="multipart/form-data">
+            <!-- 文件上传区域 -->
+            <div class="form-group">
+                <label>选择图像文件</label>
+                <div class="file-input-wrapper">
+                    <input type="file" name="file" id="fileInput" accept="image/*" required>
+                    <div class="file-label">
+                        📁 点击选择或拖拽文件到此处
+                        <div class="file-hint">
+                            支持 JPG, PNG, GIF, WebP, AVIF, HEIF 等格式
+                        </div>
+                    </div>
+                </div>
+                <div id="selectedFile" class="selected-file"></div>
+            </div>
+
+            <!-- 目标格式选择 -->
+            <div class="form-group">
+                <label for="target_format">目标格式</label>
+                <select name="target_format" id="target_format" required>
+                    <option value="webp">WebP - 现代高效格式</option>
+                    <option value="avif">AVIF - 最新一代格式</option>
+                    <option value="jpeg">JPEG - 经典有损格式</option>
+                    <option value="png">PNG - 无损格式</option>
+                    <option value="gif">GIF - 动画格式</option>
+                    <option value="heif" selected>HEIF - 高效图像格式</option>
+                </select>
+            </div>
+
+            <!-- 转换模式选择 -->
+            <div class="form-group">
+                <label>转换模式</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="mode" value="lossy">
+                        有损压缩 (更小体积)
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="mode" value="lossless" checked>
+                        无损压缩 (保持质量)
+                    </label>
+                </div>
+            </div>
+
+            <!-- 质量参数滑块 -->
+            <div class="form-group">
+                <label for="setting">质量参数</label>
+                <div class="slider-container">
+                    <input type="range" name="setting" id="setting" min="0" max="100" value="0">
+                    <span class="slider-value" id="settingValue">0</span>
+                </div>
+                <div class="param-hint" id="paramHint">
+                    压缩速度: 0 - 最慢/最佳压缩 (0=最慢/最佳，100=最快/最差)
+                </div>
+            </div>
+
+            <!-- 提交按钮 -->
+            <button type="submit" class="submit-btn">🚀 开始转换</button>
+        </form>
+
+        <!-- 底部链接 -->
+        <div class="links">
+            <a href="/docs" target="_blank">📖 API 文档</a>
+            <a href="/health" target="_blank">🏥 健康检查</a>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
