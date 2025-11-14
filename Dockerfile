@@ -6,6 +6,17 @@ ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV TEMP_DIR=/app/temp
 
+# ImageMagick 资源限制（防止资源过载）
+ENV MAGICK_MEMORY_LIMIT=512MiB
+ENV MAGICK_MAP_LIMIT=1GiB
+ENV MAGICK_DISK_LIMIT=4GiB
+ENV MAGICK_TIME_LIMIT=300
+ENV MAGICK_THREAD_LIMIT=2
+
+# 并发控制配置
+ENV WORKERS=4
+ENV MAX_CONCURRENT_PER_WORKER=3
+
 # 2. 安装 ImageMagick 和 AVIF/HEIC 依赖
 #    libheif-examples 提供了 magick 所需的 heif-enc 编码器
 RUN apt-get update && apt-get install -y \

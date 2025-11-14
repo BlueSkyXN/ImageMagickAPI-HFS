@@ -50,6 +50,11 @@ MAX_FILE_SIZE_MB = 200  # 允许上传的最大文件大小 (MB)
 TIMEOUT_SECONDS = 300   # Magick 进程执行的超时时间 (秒)
 TEMP_DIR = os.getenv("TEMP_DIR", tempfile.gettempdir())  # 临时文件存储目录，优先使用环境变量，否则使用系统临时目录
 
+# 并发控制配置（防止资源过载）
+MAX_CONCURRENT_CONVERSIONS = int(os.getenv("MAX_CONCURRENT_PER_WORKER", "3"))
+conversion_semaphore = asyncio.Semaphore(MAX_CONCURRENT_CONVERSIONS)
+logger.info(f"并发限制已启用: 每个worker最多 {MAX_CONCURRENT_CONVERSIONS} 个并发转换")
+
 # --- 2. API 参数类型定义 ---
 
 # 定义 API 路径中允许的目标格式
@@ -339,16 +344,18 @@ async def _perform_conversion(
         command_str = ' '.join(cmd)
         logger.info(f"正在执行命令: {command_str}")
 
-        # 7. 异步执行 Magick 命令 (继承自 imagemagickapi-hfs 实践)
-        process = await asyncio.subprocess.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(),
-            timeout=TIMEOUT_SECONDS
-        )
+        # 7. 异步执行 Magick 命令 (使用信号量限制并发)
+        async with conversion_semaphore:
+            logger.info(f"获取并发许可，开始ImageMagick处理")
+            process = await asyncio.subprocess.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=TIMEOUT_SECONDS
+            )
 
         # 8. 检查命令执行结果
         if process.returncode != 0:
