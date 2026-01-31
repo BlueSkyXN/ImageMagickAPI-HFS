@@ -8,7 +8,7 @@ app_port: 8000 # 你的 FastAPI 应用在容器内部监听的端口 (必须与 
 pinned: false # 是否在你的个人资料页置顶这个 Space (可选)
 ---
 
-# 🧙‍♂️ Magick 动态图像转换 API (V3)
+# 🧙‍♂️ Magick 动态图像转换 API (V4)
 
 本项目提供一个基于 FastAPI 和 ImageMagick 的高性能 REST API，支持通过动态 URL 路径对图像进行多格式转换，包括动画图像处理。
 
