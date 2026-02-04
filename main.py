@@ -13,7 +13,6 @@ ImageMagick 动态图像转换 API
 - GET /health
 """
 
-import fastapi
 from fastapi import (
     FastAPI,
     File,
@@ -24,16 +23,16 @@ from fastapi import (
     Form,
     Request
 )
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-import subprocess
 import asyncio
 import tempfile
 import os
 import shutil
 import logging
 import uuid
+import imghdr
 from typing import Literal
 
 # --- 1. 应用配置 ---
@@ -100,6 +99,56 @@ async def get_upload_file_size(upload_file: UploadFile) -> int:
     size = upload_file.file.tell()
     upload_file.file.seek(current_position)  # 恢复原始指针位置
     return size
+
+async def validate_image_content(upload_file: UploadFile) -> bool:
+    """
+    验证上传文件是否为有效的图像文件（通过文件头魔数检测）。
+    
+    此函数通过检查文件头部的魔数（magic bytes）来验证文件的真实类型，
+    防止恶意文件通过修改扩展名绕过验证。
+
+    Args:
+        upload_file: FastAPI 的 UploadFile 对象。
+
+    Returns:
+        True 如果文件是有效的图像，False 否则。
+    """
+    # 保存当前位置
+    current_position = upload_file.file.tell()
+    upload_file.file.seek(0)
+    
+    # 读取文件头部用于检测
+    file_header = upload_file.file.read(32)
+    upload_file.file.seek(current_position)  # 恢复原始指针位置
+    
+    # 使用 imghdr 检测图像类型
+    img_type = imghdr.what(None, h=file_header)
+    
+    # 支持的图像类型
+    valid_types = {'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff'}
+    
+    if img_type in valid_types:
+        return True
+    
+    # imghdr 不支持某些格式，需要手动检测魔数
+    # AVIF/HEIF 检测 (ftyp box)
+    if len(file_header) >= 12:
+        # HEIF/AVIF 文件以 ftyp box 开头
+        ftyp_offset = file_header[4:8]
+        if ftyp_offset == b'ftyp':
+            # 检查品牌类型
+            brand = file_header[8:12]
+            # 常见的 HEIF/AVIF 品牌
+            heif_brands = [b'heic', b'heix', b'hevc', b'hevx', b'mif1', b'msf1', b'avif', b'avis']
+            if brand in heif_brands:
+                return True
+    
+    # WebP 可能 imghdr 检测不到的情况
+    if len(file_header) >= 12:
+        if file_header[:4] == b'RIFF' and file_header[8:12] == b'WEBP':
+            return True
+    
+    return False
 
 def cleanup_temp_dir(temp_dir: str):
     """
@@ -189,6 +238,10 @@ async def _perform_conversion(
     """
     logger.info(f"开始转换: {target_format}/{mode}/{setting} (文件: {file.filename})")
 
+    # 初始化临时目录变量，确保 finally 块中可以安全访问
+    temp_dir = None
+    cleanup_scheduled = False
+
     # 预检查: AVIF/HEIF 格式需要 heif-enc 依赖
     if target_format in ["avif", "heif"]:
         try:
@@ -201,13 +254,13 @@ async def _perform_conversion(
             if proc_check.returncode != 0:
                 raise HTTPException(
                     status_code=503,
-                    detail=f"AVIF/HEIF encoding is not available. heif-enc encoder not found."
+                    detail="AVIF/HEIF encoding is not available. heif-enc encoder not found."
                 )
         except Exception as e:
             logger.error(f"依赖检查失败: {e}")
             raise HTTPException(
                 status_code=503,
-                detail=f"Unable to verify AVIF/HEIF encoder availability."
+                detail="Unable to verify AVIF/HEIF encoder availability."
             )
 
     # 1. 验证文件扩展名
@@ -222,7 +275,16 @@ async def _perform_conversion(
             detail=f"Unsupported file format: {file_ext}. Allowed formats: {', '.join(allowed_extensions)}"
         )
 
-    # 2. 验证文件大小
+    # 2. 验证文件内容（魔数检查，防止恶意文件）
+    is_valid_image = await validate_image_content(file)
+    if not is_valid_image:
+        logger.warning(f"文件内容验证失败: {file.filename} - 文件头魔数不匹配图像格式")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid image file content. The file does not appear to be a valid image."
+        )
+
+    # 3. 验证文件大小
     file_size_mb = await get_upload_file_size(file) / (1024 * 1024)
     if file_size_mb > MAX_FILE_SIZE_MB:
         logger.warning(f"文件过大: {file_size_mb:.2f}MB (最大: {MAX_FILE_SIZE_MB}MB)")
@@ -231,7 +293,7 @@ async def _perform_conversion(
             detail=f"File too large. Max size is {MAX_FILE_SIZE_MB}MB."
         )
 
-    # 3. 创建唯一的临时工作目录
+    # 4. 创建唯一的临时工作目录
     session_id = str(uuid.uuid4())
     temp_dir = os.path.join(TEMP_DIR, session_id)
     os.makedirs(temp_dir, exist_ok=True)
@@ -242,15 +304,14 @@ async def _perform_conversion(
 
     logger.info(f"正在临时目录中处理: {temp_dir}")
 
-    cleanup_scheduled = False
     try:
-        # 4. 保存上传的文件到临时输入路径
+        # 5. 保存上传的文件到临时输入路径
         logger.info(f"正在保存上传的文件 '{file.filename}' 至 '{input_path}'")
         with open(input_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         logger.info("文件保存成功。")
 
-        # 5. 动态构建 ImageMagick 命令行参数
+        # 6. 动态构建 ImageMagick 命令行参数
         cmd = ['magick', input_path]
 
         # 关键: 仅对动画格式使用 -coalesce 以优化性能
@@ -260,7 +321,7 @@ async def _perform_conversion(
         if file_extension.lower() in animated_formats or target_format in ['gif', 'webp']:
             cmd.append('-coalesce')
 
-        # --- 5a. 无损 (lossless) 模式逻辑 ---
+        # --- 6a. 无损 (lossless) 模式逻辑 ---
         if mode == "lossless":
             # 'setting' (0-100) 代表压缩速度 (0=最佳/最慢, 100=最快/最差)
             
@@ -301,9 +362,8 @@ async def _perform_conversion(
                 # GIF 始终是基于调色板的无损
                 # -layers optimize 用于优化动图帧
                 cmd.extend(['-layers', 'optimize'])
-                pass # Magick 默认值适用于无损GIF
 
-        # --- 5b. 有损 (lossy) 模式逻辑 ---
+        # --- 6b. 有损 (lossy) 模式逻辑 ---
         elif mode == "lossy":
             # 'setting' (0-100) 代表 质量 (0=最差, 100=最佳)
             quality = setting
@@ -339,14 +399,14 @@ async def _perform_conversion(
                 cmd.extend(['-layers', 'optimize'])
 
 
-        # 6. 添加输出路径并完成命令构建
+        # 7. 添加输出路径并完成命令构建
         cmd.append(output_path)
         command_str = ' '.join(cmd)
         logger.info(f"正在执行命令: {command_str}")
 
-        # 7. 异步执行 Magick 命令 (使用信号量限制并发)
+        # 8. 异步执行 Magick 命令 (使用信号量限制并发)
         async with conversion_semaphore:
-            logger.info(f"获取并发许可，开始ImageMagick处理")
+            logger.info("获取并发许可，开始ImageMagick处理")
             process = await asyncio.subprocess.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -357,18 +417,19 @@ async def _perform_conversion(
                 timeout=TIMEOUT_SECONDS
             )
 
-        # 8. 检查命令执行结果
+        # 9. 检查命令执行结果
         if process.returncode != 0:
-            error_message = f"Magick failed: {stderr.decode()[:1000]}"
-            logger.error(error_message)
-            raise HTTPException(status_code=500, detail=error_message)
+            error_detail = stderr.decode()
+            logger.error(f"Magick failed: {error_detail}")
+            # 不向用户暴露完整的错误信息，防止信息泄露
+            raise HTTPException(status_code=500, detail="Image conversion failed. Please check your input file and parameters.")
         
         if not os.path.exists(output_path):
             error_message = "Magick 命令成功执行，但未找到输出文件。"
             logger.error(error_message)
-            raise HTTPException(status_code=500, detail=error_message)
+            raise HTTPException(status_code=500, detail="Conversion completed but output file not found.")
 
-        # 9. 成功：准备并返回文件响应
+        # 10. 成功：准备并返回文件响应
         logger.info(f"转换成功。输出文件: '{output_path}'")
         
         original_filename_base = os.path.splitext(file.filename)[0]
@@ -403,7 +464,7 @@ async def _perform_conversion(
         # 确保关闭上传的文件句柄
         await file.close()
         # 备用清理：仅当未注册后台任务时立即清理
-        if not cleanup_scheduled and os.path.exists(temp_dir):
+        if temp_dir is not None and not cleanup_scheduled and os.path.exists(temp_dir):
             cleanup_temp_dir(temp_dir)
 
 @app.post("/", response_class=FileResponse, summary="简化上传转换")
