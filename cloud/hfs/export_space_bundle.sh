@@ -3,7 +3,7 @@
 set -eu
 
 usage() {
-    printf '%s\n' "Usage: $0 --output DIRECTORY [--commit COMMIT]" >&2
+    printf '%s\n' "Usage: $0 --output DIRECTORY [--commit COMMIT] [--manifest FILE]" >&2
     exit 64
 }
 
@@ -16,6 +16,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_dir=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 output_dir=
 commit_ref=
+manifest_file=hfs-dev.toml
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -29,6 +30,11 @@ while [ "$#" -gt 0 ]; do
             commit_ref=$2
             shift 2
             ;;
+        --manifest)
+            [ "$#" -ge 2 ] || usage
+            manifest_file=$2
+            shift 2
+            ;;
         -h|--help)
             usage
             ;;
@@ -37,6 +43,10 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+case "$manifest_file" in
+    hfs-dev.toml|hfs-dev.candidate.toml) ;;
+    *) fail "manifest must be hfs-dev.toml or hfs-dev.candidate.toml" ;;
+esac
 
 [ -n "$output_dir" ] || usage
 git -C "$repo_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
@@ -63,8 +73,8 @@ trap cleanup EXIT HUP INT TERM
 git -C "$repo_dir" archive --format=tar "$commit" -- cloud/hfs \
     | tar -xf - -C "$archive_dir" --strip-components=2 \
     || fail "cannot archive HFS wrapper from commit $commit"
-git -C "$repo_dir" show "$commit:hfs-dev.toml" > "$archive_dir/hfs-dev.toml" \
-    || fail "cannot read root hfs-dev.toml from commit $commit"
+git -C "$repo_dir" show "$commit:$manifest_file" > "$archive_dir/hfs-dev.toml" \
+    || fail "cannot read root $manifest_file from commit $commit"
 wrapper_dir="$archive_dir"
 
 if [ -e "$output_dir" ]; then

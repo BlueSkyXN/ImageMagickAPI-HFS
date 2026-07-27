@@ -104,7 +104,7 @@ mkdir /tmp/imagemagickapi-hfs-space
 ./cloud/hfs/export_space_bundle.sh --output /tmp/imagemagickapi-hfs-space --commit HEAD
 ```
 
-发布工作流 `.github/workflows/sync-to-hf-space.yml` 只能通过 `workflow_dispatch` 手动触发，且必须输入 `confirm=yes`。它先执行静态校验，再导出指定 GitHub commit；通过 Hugging Face CLI 以 `--delete '*'` 清除旧的全仓库 Space 内容、上传五文件 wrapper，并下载比对关键文件。不要使用 Git remote、token URL、`git push` 或 force-push 来部署 Space。
+发布工作流 `.github/workflows/sync-to-hf-space.yml` 只能通过 `workflow_dispatch` 手动触发，且必须输入 `confirm=PUBLISH_WRAPPER`。candidate/production 由独立 manifest 固定目标；workflow 在写入前拒绝非 private candidate 或含 allowlist 外文件的旧 Space，不自动删除远端内容，写入后下载比对全部五个文件并回读完整 tree。旧全仓 Space 的清理必须走单独 owner approval。不要使用 Git remote、token URL、`git push` 或 force-push 来部署 Space。
 
 ## 分层验证
 

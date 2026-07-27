@@ -51,6 +51,12 @@ expected_metadata = {
 }
 require({key: config.get(key) for key in expected_metadata} == expected_metadata,
         "hfs-dev.toml metadata must match the HFS v2 source-lane contract")
+candidate = tomllib.loads(text("hfs-dev.candidate.toml"))
+require(candidate.get("space") == "BlueSkyXN/ImageMagickAPI-HFS-v2-candidate",
+        "candidate manifest must use the fixed v2 candidate Space")
+for key in sorted(set(config) | set(candidate)):
+    if key != "space":
+        require(config.get(key) == candidate.get(key), f"candidate manifest differs at {key}")
 require(set(config) == set(expected_metadata) | {"local_only", "secrets", "variables"},
         "hfs-dev.toml may contain only required metadata and root Settings fields")
 roles = config
@@ -95,7 +101,7 @@ for name in allowed:
 template = (wrapper / "Dockerfile.template").read_text(encoding="utf-8")
 exported_dockerfile = (bundle / "Dockerfile").read_text(encoding="utf-8")
 exporter = (wrapper / "export_space_bundle.sh").read_text(encoding="utf-8")
-require("archive --format=tar" in exporter and 'show "$commit:hfs-dev.toml"' in exporter,
+require("archive --format=tar" in exporter and 'show "$commit:$manifest_file"' in exporter,
         "exporter must source wrapper and root manifest from the requested Git archive commit")
 require(template.count("__SOURCE_COMMIT__") == 1, "Dockerfile template must have one SHA placeholder")
 sha_matches = re.findall(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", exported_dockerfile)
@@ -199,11 +205,17 @@ for invariant in (
 
 # Publish is guarded manual replacement; verification is secret-free and never publishes.
 publish = text(".github/workflows/sync-to-hf-space.yml")
-require("workflow_dispatch:" in publish and "confirm:" in publish and "confirm == 'yes'" in publish,
+require("workflow_dispatch:" in publish and "confirm:" in publish and "confirm == 'PUBLISH_WRAPPER'" in publish,
         "publish workflow must require workflow_dispatch confirmation")
 require("huggingface-cli" in publish or "hf upload" in publish,
         "publish workflow must use the Hugging Face CLI")
-require("--delete '*'" in publish, "publish workflow must explicitly delete old Space files")
+require("--delete" not in publish, "publish workflow must not delete remote files")
+require("candidate Space must be private" in publish and "refusing non-wrapper Space tree" in publish,
+        "publish workflow must preflight private candidate and wrapper allowlist")
+require("full Space tree readback" in publish,
+        "publish workflow must read back the complete wrapper tree")
+require("huggingface_hub==1.5.0" in publish,
+        "publish workflow must install a pinned Hugging Face CLI")
 require("cmp \"$BUNDLE_DIR/$file\" \"$READBACK_DIR/$file\"" in publish,
         "publish workflow must compare the critical CLI readback files with the wrapper bundle")
 require("git push" not in publish and "--force" not in publish and "git remote" not in publish,

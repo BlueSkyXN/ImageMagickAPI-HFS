@@ -3,8 +3,13 @@ name: Publish generated Hugging Face Space wrapper
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: Select the fixed candidate or production manifest
+        required: true
+        type: choice
+        options: [candidate, production]
       confirm:
-        description: Type yes to replace the Space with the generated five-file wrapper
+        description: Type PUBLISH_WRAPPER to upload the generated five-file wrapper
         required: true
         type: string
 
@@ -13,10 +18,11 @@ permissions:
 
 jobs:
   publish:
-    if: github.event.inputs.confirm == 'yes'
+    if: github.event.inputs.confirm == 'PUBLISH_WRAPPER'
     runs-on: ubuntu-latest
     env:
-      SPACE_ID: BlueSkyXN/ImageMagickAPI-HFS
+      HFS_TARGET: ${{ inputs.target }}
+      HFS_MANIFEST: ${{ inputs.target == 'candidate' && 'hfs-dev.candidate.toml' || 'hfs-dev.toml' }}
       BUNDLE_DIR: .hfs-export
       READBACK_DIR: .hfs-readback
     steps:
@@ -36,20 +42,44 @@ jobs:
       - name: Export the five-file Space wrapper
         run: |
           mkdir "$BUNDLE_DIR"
-          ./cloud/hfs/export_space_bundle.sh --output "$BUNDLE_DIR" --commit "${{ github.sha }}"
+          ./cloud/hfs/export_space_bundle.sh --output "$BUNDLE_DIR" --commit "${{ github.sha }}" --manifest "$HFS_MANIFEST"
           test "$(find "$BUNDLE_DIR" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" = 5
 
       - name: Install Hugging Face CLI
-        run: python -m pip install --disable-pip-version-check huggingface_hub
+        run: |
+          python -m pip install --disable-pip-version-check "huggingface_hub==1.5.0"
+          hf version
 
-      - name: Guardedly replace the Space contents
+      - name: Resolve and preflight fixed target Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # --delete '*' explicitly removes old full-repository Space files that are not in this bundle.
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+          from huggingface_hub import HfApi
+
+          manifest = tomllib.loads(Path(os.environ["HFS_MANIFEST"]).read_text(encoding="utf-8"))
+          space_id = manifest["space"]
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          info = api.repo_info(repo_id=space_id, repo_type="space")
+          if os.environ["HFS_TARGET"] == "candidate" and not info.private:
+              raise SystemExit("candidate Space must be private")
+          expected = {".dockerignore", "BUILD_SOURCE.txt", "Dockerfile", "README.md", "hfs-dev.toml"}
+          unexpected = set(api.list_repo_files(repo_id=space_id, repo_type="space")) - expected - {".gitattributes"}
+          if unexpected:
+              raise SystemExit(f"refusing non-wrapper Space tree: {sorted(unexpected)}")
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as env_file:
+              env_file.write(f"SPACE_ID={space_id}\n")
+          PY
+
+      - name: Upload without remote deletion
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
           hf upload "$SPACE_ID" "$BUNDLE_DIR" . \
             --repo-type space \
-            --delete '*' \
             --commit-message "Publish generated wrapper for ${{ github.sha }}"
 
       - name: Read back critical generated files
@@ -61,3 +91,14 @@ jobs:
             hf download "$SPACE_ID" "$file" --repo-type space --local-dir "$READBACK_DIR"
             cmp "$BUNDLE_DIR/$file" "$READBACK_DIR/$file"
           done
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          expected = {".dockerignore", "BUILD_SOURCE.txt", "Dockerfile", "README.md", "hfs-dev.toml"}
+          remote = set(HfApi(token=os.environ["HF_TOKEN"]).list_repo_files(
+              repo_id=os.environ["SPACE_ID"], repo_type="space"
+          ))
+          if remote - expected - {".gitattributes"} or expected - remote:
+              raise SystemExit("full Space tree readback differs from wrapper allowlist")
+          PY
