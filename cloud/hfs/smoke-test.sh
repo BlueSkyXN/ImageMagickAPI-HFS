@@ -66,10 +66,16 @@ if content_types != [expected_type]:
 data = open(output_path, "rb").read()
 if format_name == "webp":
     if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
-        raise SystemExit("WebP response lacks RIFF/WEBP magic")
+        raise SystemExit(
+            f"WebP response lacks RIFF/WEBP magic "
+            f"(size={len(data)}, prefix={data[:32].hex()})"
+        )
 else:
     if len(data) < 16 or data[4:8] != b"ftyp":
-        raise SystemExit(f"{format_name} response lacks an ISO-BMFF ftyp box")
+        raise SystemExit(
+            f"{format_name} response lacks an ISO-BMFF ftyp box "
+            f"(size={len(data)}, prefix={data[:32].hex()})"
+        )
     ftyp_size = int.from_bytes(data[:4], "big")
     if ftyp_size < 16 or ftyp_size > len(data) or (ftyp_size - 16) % 4:
         raise SystemExit(f"{format_name} response has an invalid ftyp box length")
