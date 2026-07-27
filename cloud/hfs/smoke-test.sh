@@ -16,8 +16,9 @@ path = sys.argv[1]
 def chunk(kind, payload):
     return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xffffffff)
 png = b"\x89PNG\r\n\x1a\n"
-png += chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
-png += chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00"))
+png += chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0))
+row = b"\x00" + b"\xff\x00\x00" * 2
+png += chunk(b"IDAT", zlib.compress(row * 2))
 png += chunk(b"IEND", b"")
 open(path, "wb").write(png)
 PY
