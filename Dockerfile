@@ -22,6 +22,8 @@ ENV MAX_CONCURRENT_PER_WORKER=3
 RUN apt-get update && apt-get install -y \
     imagemagick \
     libheif-examples \
+    libheif-plugin-aomenc \
+    libheif-plugin-x265 \
     && rm -rf /var/lib/apt/lists/*
 
 # 3. 设置工作目录 (结构同您的 OCR-HFS)

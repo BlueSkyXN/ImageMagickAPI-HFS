@@ -28,6 +28,8 @@ ENV MAX_CONCURRENT_PER_WORKER=3
 RUN apt-get update && apt-get install -y --no-install-recommends \
     imagemagick \
     libheif-examples \
+    libheif-plugin-aomenc \
+    libheif-plugin-x265 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
