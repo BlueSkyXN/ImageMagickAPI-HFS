@@ -1,0 +1,6 @@
+*
+!.dockerignore
+!BUILD_SOURCE.txt
+!Dockerfile
+!README.md
+!hfs-dev.toml

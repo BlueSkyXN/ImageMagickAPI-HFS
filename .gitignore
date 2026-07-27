@@ -134,15 +134,33 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Environments
+# Environments and local configuration
 .env
+.env.*
+!.env.example
 .envrc
+config.toml
+local/
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Credentials and private key material
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+id_rsa
+id_ed25519
+*_credential*
+*_credentials*
+*_secret*
+*_token*
 
 # Spyder project settings
 .spyderproject
@@ -206,3 +224,12 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 .DS_Store
+
+# Generated HFS exports, smoke-test artifacts, and local caches
+.hfs-export-*
+.hfs-smoke-*
+smoke-*.log
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
