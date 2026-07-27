@@ -98,6 +98,9 @@ allowed = {".dockerignore", "BUILD_SOURCE.txt", "Dockerfile", "README.md", "hfs-
 require({path.name for path in bundle.iterdir()} == allowed, "export must contain exactly the five-file allowlist")
 for name in allowed:
     require((bundle / name).is_file(), f"export missing {name}")
+wrapper_readme = text("cloud/hfs/README.md")
+require("\nemoji: 🖼️\n" in wrapper_readme,
+        "Space card emoji must be a valid pictographic character")
 template = (wrapper / "Dockerfile.template").read_text(encoding="utf-8")
 exported_dockerfile = (bundle / "Dockerfile").read_text(encoding="utf-8")
 exporter = (wrapper / "export_space_bundle.sh").read_text(encoding="utf-8")
@@ -134,7 +137,8 @@ require("COPY ." not in template and "COPY ./" not in template,
 
 # Preserve required runtime, resource, port, and concurrency values in both Dockerfiles.
 required_docker = {
-    "FROM python:3.10-slim", "imagemagick", "libheif-examples", "ENV PORT=8000",
+    "FROM python:3.10-slim", "imagemagick", "libheif-examples",
+    "libheif-plugin-aomenc", "libheif-plugin-x265", "ENV PORT=8000",
     "ENV PYTHONUNBUFFERED=1", "ENV TEMP_DIR=/app/temp",
     "ENV MAGICK_MEMORY_LIMIT=512MiB", "ENV MAGICK_MAP_LIMIT=1GiB",
     "ENV MAGICK_DISK_LIMIT=4GiB", "ENV MAGICK_TIME_LIMIT=300",
@@ -164,6 +168,8 @@ require("JSONResponse(status_code=503" in main_source and '"status"] = "unhealth
         "health must return non-2xx unhealthy responses")
 require("except OSError as exc:" in main_source,
         "subprocess creation errors must be handled")
+require("['heif-enc']" in main_source and "commands[1].append('--avif')" in main_source,
+        "AVIF/HEIF output must use the explicit libheif encoder path")
 for invariant in (
     "asyncio.wait_for(process.communicate(), timeout=5)",
     "process.returncode != 0",

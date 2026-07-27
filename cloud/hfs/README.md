@@ -1,6 +1,6 @@
 ---
 title: Magick Image Converter
-emoji: image
+emoji: 🖼️
 colorFrom: blue
 colorTo: green
 sdk: docker
