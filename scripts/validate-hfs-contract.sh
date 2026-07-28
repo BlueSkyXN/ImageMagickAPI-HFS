@@ -220,7 +220,7 @@ require("candidate Space must be private" in publish and "refusing non-wrapper S
         "publish workflow must preflight private candidate and wrapper allowlist")
 require("full Space tree readback" in publish,
         "publish workflow must read back the complete wrapper tree")
-require("huggingface_hub==1.5.0" in publish,
+require("huggingface_hub==1.24.0" in publish,
         "publish workflow must install a pinned Hugging Face CLI")
 require("cmp \"$BUNDLE_DIR/$file\" \"$READBACK_DIR/$file\"" in publish,
         "publish workflow must compare the critical CLI readback files with the wrapper bundle")
