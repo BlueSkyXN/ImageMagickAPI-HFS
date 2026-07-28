@@ -12,10 +12,26 @@ echo "  MAGICK_MEMORY_LIMIT: ${MAGICK_MEMORY_LIMIT:-512MiB}"
 echo "  MAGICK_TIME_LIMIT: ${MAGICK_TIME_LIMIT:-300}"
 echo "=========================================="
 
-# 验证Magick是否可用
+# 依赖缺失或探测失败时拒绝启动，避免暴露一个无法转换的服务。
 echo "Checking dependencies..."
-magick --version | head -n 1
-which heif-enc
+if ! command -v magick >/dev/null 2>&1; then
+    echo "fatal: magick executable is required" >&2
+    exit 1
+fi
+if ! command -v heif-enc >/dev/null 2>&1; then
+    echo "fatal: heif-enc executable is required" >&2
+    exit 1
+fi
+if ! magick --version >/dev/null 2>&1; then
+    echo "fatal: magick version probe failed" >&2
+    exit 1
+fi
+if ! heif-enc --help >/dev/null 2>&1; then
+    echo "fatal: heif-enc help probe failed" >&2
+    exit 1
+fi
+printf '%s\n' "  magick: $(command -v magick)"
+printf '%s\n' "  heif-enc: $(command -v heif-enc)"
 
 # 确保使用正确的端口变量
 PORT="${PORT:-8000}"

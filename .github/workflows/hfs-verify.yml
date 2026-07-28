@@ -1,0 +1,56 @@
+name: Verify HFS wrapper
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      BUNDLE_DIR: .hfs-verify-export
+      IMAGE_NAME: imagemagickapi-hfs-verify
+      CONTAINER_NAME: imagemagickapi-hfs-verify
+      SMOKE_PORT: '18000'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python for static parsing
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run static HFS checks
+        run: ./scripts/static-check.sh
+
+      - name: Export wrapper for this exact commit
+        run: |
+          mkdir "$BUNDLE_DIR"
+          ./cloud/hfs/export_space_bundle.sh --output "$BUNDLE_DIR" --commit "${{ github.sha }}"
+
+      - name: Build generated Space image
+        run: docker build --tag "$IMAGE_NAME" "$BUNDLE_DIR"
+
+      - name: Run generated Space image
+        run: docker run --detach --name "$CONTAINER_NAME" --publish "$SMOKE_PORT:8000" "$IMAGE_NAME"
+
+      - name: Smoke test WebP, AVIF, and HEIF conversion
+        run: ./cloud/hfs/smoke-test.sh "http://127.0.0.1:$SMOKE_PORT"
+
+      - name: Print container logs after a failure
+        if: failure()
+        run: docker logs "$CONTAINER_NAME"
+
+      - name: Always clean up verification container and image
+        if: always()
+        run: |
+          docker rm --force "$CONTAINER_NAME" || true
+          docker image rm --force "$IMAGE_NAME" || true

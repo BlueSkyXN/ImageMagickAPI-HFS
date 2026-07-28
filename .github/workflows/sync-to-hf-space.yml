@@ -1,30 +1,104 @@
-name: Sync to Hugging Face Space
+name: Publish generated Hugging Face Space wrapper
 
 on:
-  push:
-    branches:
-      - main  # 或者你的主分支名称，例如 master
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Select the fixed candidate or production manifest
+        required: true
+        type: choice
+        options: [candidate, production]
+      confirm:
+        description: Type PUBLISH_WRAPPER to upload the generated five-file wrapper
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
-  sync:
+  publish:
+    if: github.event.inputs.confirm == 'PUBLISH_WRAPPER'
     runs-on: ubuntu-latest
+    env:
+      HFS_TARGET: ${{ inputs.target }}
+      HFS_MANIFEST: ${{ inputs.target == 'candidate' && 'hfs-dev.candidate.toml' || 'hfs-dev.toml' }}
+      BUNDLE_DIR: .hfs-export
+      READBACK_DIR: .hfs-readback
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4 # 建议使用最新版本
+      - name: Check out the exact source revision
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 获取所有历史记录，以便正确推送
+          fetch-depth: 1
 
-      - name: Set up Git
+      - name: Set up Python for export and Hugging Face CLI
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run static HFS checks
+        run: ./scripts/static-check.sh
+
+      - name: Export the five-file Space wrapper
         run: |
-          git config --global user.email "action@github.com"
-          git config --global user.name "GitHub Action"
+          mkdir "$BUNDLE_DIR"
+          ./cloud/hfs/export_space_bundle.sh --output "$BUNDLE_DIR" --commit "${{ github.sha }}" --manifest "$HFS_MANIFEST"
+          test "$(find "$BUNDLE_DIR" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" = 5
 
-      - name: Push to Hugging Face Space
+      - name: Install Hugging Face CLI
+        run: |
+          python -m pip install --disable-pip-version-check "huggingface_hub==1.5.0"
+          hf version
+
+      - name: Resolve and preflight fixed target Space
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }} # 引用你之前创建的 Secret
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # 将 <your-hf-username> 和 <your-space-name> 替换为你的实际信息
-          git remote add space https://user:${HF_TOKEN}@huggingface.co/spaces/BlueSkyXN/ImageMagickAPI-HFS
-          # 强制推送到 Space 的 main 分支，覆盖原有内容
-          # 如果你的 Space 主分支不是 main，请相应修改
-          git push --force space main
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+          from huggingface_hub import HfApi
+
+          manifest = tomllib.loads(Path(os.environ["HFS_MANIFEST"]).read_text(encoding="utf-8"))
+          space_id = manifest["space"]
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          info = api.repo_info(repo_id=space_id, repo_type="space")
+          if os.environ["HFS_TARGET"] == "candidate" and not info.private:
+              raise SystemExit("candidate Space must be private")
+          expected = {".dockerignore", "BUILD_SOURCE.txt", "Dockerfile", "README.md", "hfs-dev.toml"}
+          unexpected = set(api.list_repo_files(repo_id=space_id, repo_type="space")) - expected - {".gitattributes"}
+          if unexpected:
+              raise SystemExit(f"refusing non-wrapper Space tree: {sorted(unexpected)}")
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as env_file:
+              env_file.write(f"SPACE_ID={space_id}\n")
+          PY
+
+      - name: Upload without remote deletion
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          hf upload "$SPACE_ID" "$BUNDLE_DIR" . \
+            --repo-type space \
+            --commit-message "Publish generated wrapper for ${{ github.sha }}"
+
+      - name: Read back critical generated files
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          mkdir "$READBACK_DIR"
+          for file in Dockerfile README.md hfs-dev.toml BUILD_SOURCE.txt .dockerignore; do
+            hf download "$SPACE_ID" "$file" --repo-type space --local-dir "$READBACK_DIR"
+            cmp "$BUNDLE_DIR/$file" "$READBACK_DIR/$file"
+          done
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          expected = {".dockerignore", "BUILD_SOURCE.txt", "Dockerfile", "README.md", "hfs-dev.toml"}
+          remote = set(HfApi(token=os.environ["HF_TOKEN"]).list_repo_files(
+              repo_id=os.environ["SPACE_ID"], repo_type="space"
+          ))
+          if remote - expected - {".gitattributes"} or expected - remote:
+              raise SystemExit("full Space tree readback differs from wrapper allowlist")
+          PY

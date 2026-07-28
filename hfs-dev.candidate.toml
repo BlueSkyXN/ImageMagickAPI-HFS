@@ -1,0 +1,20 @@
+standard = "2.0"
+project = "imagemagickapi-hfs"
+space = "BlueSkyXN/ImageMagickAPI-HFS-v2-candidate"
+sovereignty = "sovereign"
+lane = "source"
+version_source = "commit"
+
+local_only = ["TEMP_DIR"]
+secrets = []
+variables = [
+  "PORT",
+  "PYTHONUNBUFFERED",
+  "MAGICK_MEMORY_LIMIT",
+  "MAGICK_MAP_LIMIT",
+  "MAGICK_DISK_LIMIT",
+  "MAGICK_TIME_LIMIT",
+  "MAGICK_THREAD_LIMIT",
+  "WORKERS",
+  "MAX_CONCURRENT_PER_WORKER",
+]

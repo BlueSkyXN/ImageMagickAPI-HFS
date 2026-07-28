@@ -176,44 +176,97 @@ async def root(request: Request):
     """
     return templates.TemplateResponse("index.html", {"request": request})
 
+async def _probe_dependency(name: str, probe_arg: str) -> dict:
+    """Probe a required executable without relying on an external ``which`` command."""
+    executable = shutil.which(name)
+    if executable is None:
+        return {"status": "missing", "path": None, "detail": "executable not found"}
+
+    try:
+        process = await asyncio.subprocess.create_subprocess_exec(
+            executable,
+            probe_arg,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except OSError as exc:
+        logger.warning("Unable to start dependency probe for %s: %s", name, exc)
+        return {"status": "failed", "path": executable, "detail": "probe could not start"}
+
+    try:
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=5)
+    except asyncio.TimeoutError:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+        await process.communicate()
+        return {"status": "failed", "path": executable, "detail": "probe timed out"}
+
+    if process.returncode != 0:
+        return {"status": "failed", "path": executable, "detail": "probe exited unsuccessfully"}
+
+    details = {"status": "available", "path": executable}
+    if name == "magick":
+        details["version"] = stdout.decode(errors="replace").split("\n")[0]
+    return details
+
+
+def _probe_temp_dir() -> dict:
+    """Verify that conversion workers can create files in the configured temp directory."""
+    try:
+        if not os.path.isdir(TEMP_DIR):
+            return {"status": "unavailable", "temp_dir": TEMP_DIR, "detail": "not a directory"}
+        with tempfile.NamedTemporaryFile(dir=TEMP_DIR, prefix=".health-", delete=True):
+            pass
+        disk_info = os.statvfs(TEMP_DIR)
+    except OSError as exc:
+        logger.error("健康检查无法使用临时目录: %s", exc)
+        return {"status": "unavailable", "temp_dir": TEMP_DIR, "detail": "not writable"}
+
+    free_space_mb = (disk_info.f_bavail * disk_info.f_frsize) / (1024 * 1024)
+    return {
+        "status": "available",
+        "free_mb": round(free_space_mb, 2),
+        "temp_dir": TEMP_DIR,
+    }
+
+
 @app.get("/health", summary="服务健康检查")
 async def health_check():
-    """
-    提供详细的API和服务依赖（ImageMagick, heif-enc）的健康状态。
-    (继承自 imagemagickapi-hfs 实践)
-    """
-    try:
-        # 检查 ImageMagick
-        proc_magick = await asyncio.subprocess.create_subprocess_exec(
-            'magick', '--version', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout_m, stderr_m = await proc_magick.communicate()
-        magick_version = stdout_m.decode().split('\n')[0] if proc_magick.returncode == 0 else "Not available"
-        
-        # 检查 AVIF/HEIF 编码器
-        proc_heif = await asyncio.subprocess.create_subprocess_exec(
-            'which', 'heif-enc', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout_h, stderr_h = await proc_heif.communicate()
-        heif_encoder_path = stdout_h.decode().strip() if proc_heif.returncode == 0 else "Not available (AVIF/HEIF conversion will fail)"
+    """Report dependency failures as a non-2xx response before serving conversions."""
+    dependencies = {
+        "magick": await _probe_dependency("magick", "--version"),
+        "heif_enc": await _probe_dependency("heif-enc", "--help"),
+    }
+    magick = dependencies["magick"]
+    heif_enc = dependencies["heif_enc"]
+    base_response = {
+        "dependencies": dependencies,
+        "imagemagick": magick.get("version", "Not available"),
+        "avif_encoder": heif_enc.get("path") or "Not available (AVIF/HEIF conversion will fail)",
+        "resource_limits": {
+            "max_file_size_mb": MAX_FILE_SIZE_MB,
+            "timeout_seconds": TIMEOUT_SECONDS,
+        },
+    }
 
-        # 检查磁盘空间
-        disk_info = os.statvfs(TEMP_DIR)
-        free_space_mb = (disk_info.f_bavail * disk_info.f_frsize) / (1024 * 1024)
-        
-        return {
-            "status": "healthy",
-            "imagemagick": magick_version,
-            "avif_encoder": heif_encoder_path,
-            "disk_space": {"free_mb": round(free_space_mb, 2), "temp_dir": TEMP_DIR},
-            "resource_limits": {
-                "max_file_size_mb": MAX_FILE_SIZE_MB,
-                "timeout_seconds": TIMEOUT_SECONDS
-            }
-        }
-    except Exception as e:
-        logger.error(f"健康检查失败: {str(e)}")
-        return JSONResponse(status_code=500, content={"status": "unhealthy", "error": str(e)})
+    if any(item["status"] != "available" for item in dependencies.values()):
+        base_response["status"] = "unhealthy"
+        return JSONResponse(status_code=503, content=base_response)
+
+    temp_dir = _probe_temp_dir()
+    if temp_dir["status"] != "available":
+        base_response["status"] = "unhealthy"
+        base_response["disk_space"] = temp_dir
+        return JSONResponse(status_code=503, content=base_response)
+
+    base_response["status"] = "healthy"
+    base_response["disk_space"] = {
+        "free_mb": temp_dir["free_mb"],
+        "temp_dir": temp_dir["temp_dir"],
+    }
+    return base_response
 
 async def _perform_conversion(
     background_tasks: BackgroundTasks,
@@ -242,26 +295,12 @@ async def _perform_conversion(
     temp_dir = None
     cleanup_scheduled = False
 
-    # 预检查: AVIF/HEIF 格式需要 heif-enc 依赖
-    if target_format in ["avif", "heif"]:
-        try:
-            proc_check = await asyncio.subprocess.create_subprocess_exec(
-                'which', 'heif-enc',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            await proc_check.communicate()
-            if proc_check.returncode != 0:
-                raise HTTPException(
-                    status_code=503,
-                    detail="AVIF/HEIF encoding is not available. heif-enc encoder not found."
-                )
-        except Exception as e:
-            logger.error(f"依赖检查失败: {e}")
-            raise HTTPException(
-                status_code=503,
-                detail="Unable to verify AVIF/HEIF encoder availability."
-            )
+    # 预检查: AVIF/HEIF 格式需要 heif-enc 依赖。
+    if target_format in ["avif", "heif"] and shutil.which("heif-enc") is None:
+        raise HTTPException(
+            status_code=503,
+            detail="AVIF/HEIF encoding is not available. heif-enc encoder not found."
+        )
 
     # 1. 验证文件扩展名
     if not file.filename:
@@ -311,7 +350,11 @@ async def _perform_conversion(
             shutil.copyfileobj(file.file, buffer)
         logger.info("文件保存成功。")
 
-        # 6. 动态构建 ImageMagick 命令行参数
+        # 6. 动态构建转换命令。Debian 的 ImageMagick 包不一定编译了
+        # HEIF coder；在这种环境里仅使用 output.avif/output.heif 后缀会
+        # 静默写出 PNG。AVIF/HEIF 因此由已校验存在的 heif-enc 负责，
+        # ImageMagick 只把输入规范化为 encoder 可读的 PNG。
+        use_heif_encoder = target_format in ["avif", "heif"]
         cmd = ['magick', input_path]
 
         # 关键: 仅对动画格式使用 -coalesce 以优化性能
@@ -325,19 +368,7 @@ async def _perform_conversion(
         if mode == "lossless":
             # 'setting' (0-100) 代表压缩速度 (0=最佳/最慢, 100=最快/最差)
             
-            if target_format == "avif":
-                # AVIF speed (0-10), 0 是最慢/最佳
-                avif_speed = min(10, int(setting / 10.0))
-                cmd.extend(['-define', 'avif:lossless=true'])
-                cmd.extend(['-define', f'avif:speed={avif_speed}'])
-            
-            elif target_format == "heif":
-                # HEIF speed (0-10), 0 是最慢/最佳
-                heif_speed = min(10, int(setting / 10.0))
-                cmd.extend(['-define', 'heif:lossless=true'])
-                cmd.extend(['-define', f'heif:speed={heif_speed}'])
-
-            elif target_format == "webp":
+            if target_format == "webp":
                 # WebP method (0-6), 6 是最慢/最佳
                 # 映射: setting(0) -> method(6), setting(100) -> method(0)
                 # 使用线性插值确保精确映射
@@ -368,18 +399,7 @@ async def _perform_conversion(
             # 'setting' (0-100) 代表 质量 (0=最差, 100=最佳)
             quality = setting
 
-            if target_format == "avif":
-                # AVIF cq-level (0-63), 0 是最佳
-                # 映射: quality(100) -> cq(0) ; quality(0) -> cq(63)
-                cq_level = max(0, min(63, int(63 * (1 - quality / 100.0))))
-                cmd.extend(['-define', f'avif:cq-level={cq_level}'])
-                cmd.extend(['-define', 'avif:speed=4']) # 默认使用较快的速度
-            
-            elif target_format == "heif":
-                # HEIF (heif-enc) 使用 -quality (0-100) 进行有损压缩
-                cmd.extend(['-quality', str(quality)])
-
-            elif target_format == "webp":
+            if target_format == "webp":
                 cmd.extend(['-quality', str(quality)])
                 cmd.extend(['-define', 'webp:method=4']) # 默认使用较快的速度
             
@@ -400,32 +420,57 @@ async def _perform_conversion(
 
 
         # 7. 添加输出路径并完成命令构建
-        cmd.append(output_path)
-        command_str = ' '.join(cmd)
-        logger.info(f"正在执行命令: {command_str}")
+        if use_heif_encoder:
+            encoder_input_path = os.path.join(temp_dir, "encoder-input.png")
+            # heif-enc 只消费单张静态输入；明确选择第一帧，避免
+            # ImageMagick 按未知 AVIF/HEIF coder 静默生成错误格式。
+            commands = [
+                ['magick', f'{input_path}[0]', encoder_input_path],
+                ['heif-enc'],
+            ]
+            if target_format == "avif":
+                commands[1].append('--avif')
+            if mode == "lossless":
+                commands[1].append('--lossless')
+            else:
+                commands[1].extend(['--quality', str(setting)])
+            commands[1].extend(['--output', output_path, encoder_input_path])
+        else:
+            cmd.append(output_path)
+            commands = [cmd]
 
-        # 8. 异步执行 Magick 命令 (使用信号量限制并发)
+        # 8. 异步执行转换命令 (使用信号量限制并发)
         async with conversion_semaphore:
-            logger.info("获取并发许可，开始ImageMagick处理")
-            process = await asyncio.subprocess.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=TIMEOUT_SECONDS
-            )
+            logger.info("获取并发许可，开始图像处理")
+            for command in commands:
+                logger.info("正在执行命令: %s", ' '.join(command))
+                try:
+                    process = await asyncio.subprocess.create_subprocess_exec(
+                        *command,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                except OSError as exc:
+                    logger.error("无法启动图像转换进程: %s", exc)
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Image conversion dependency is unavailable."
+                    ) from exc
+                _, stderr = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=TIMEOUT_SECONDS
+                )
+                if process.returncode != 0:
+                    error_detail = stderr.decode(errors="replace")
+                    logger.error("Image conversion command failed: %s", error_detail)
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Image conversion failed. Please check your input file and parameters."
+                    )
 
         # 9. 检查命令执行结果
-        if process.returncode != 0:
-            error_detail = stderr.decode()
-            logger.error(f"Magick failed: {error_detail}")
-            # 不向用户暴露完整的错误信息，防止信息泄露
-            raise HTTPException(status_code=500, detail="Image conversion failed. Please check your input file and parameters.")
-        
         if not os.path.exists(output_path):
-            error_message = "Magick 命令成功执行，但未找到输出文件。"
+            error_message = "转换命令成功执行，但未找到输出文件。"
             logger.error(error_message)
             raise HTTPException(status_code=500, detail="Conversion completed but output file not found.")
 

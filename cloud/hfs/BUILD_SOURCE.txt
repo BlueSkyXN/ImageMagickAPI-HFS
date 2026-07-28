@@ -1,0 +1,6 @@
+Generated Space bundle provenance
+===============================
+
+The exact product source commit is the full 40-character SOURCE_COMMIT value embedded in Dockerfile. The Docker build clones the GitHub source repository, fetches that commit, performs a detached checkout, and asserts that HEAD matches it exactly.
+
+This file intentionally contains no mutable source revision: Dockerfile is the single provenance injection point.
