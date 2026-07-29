@@ -222,7 +222,7 @@ require("full Space tree readback" in publish,
         "publish workflow must read back the complete wrapper tree")
 for invariant in (
     "huggingface_hub==1.5.0",
-    "click==8.3.1",
+    "click==8.3.3",
     "python -m huggingface_hub.cli.hf --help",
     "python -m huggingface_hub.cli.hf upload --help",
     "python -m huggingface_hub.cli.hf download --help",
