@@ -47,8 +47,11 @@ jobs:
 
       - name: Install Hugging Face CLI
         run: |
-          python -m pip install --disable-pip-version-check "huggingface_hub==1.24.0"
-          hf version
+          python -m pip install --disable-pip-version-check "huggingface_hub==1.5.0" "click==8.3.1"
+          python -m huggingface_hub.cli.hf version
+          python -m huggingface_hub.cli.hf --help >/dev/null
+          python -m huggingface_hub.cli.hf upload --help >/dev/null
+          python -m huggingface_hub.cli.hf download --help >/dev/null
 
       - name: Resolve and preflight fixed target Space
         env:
@@ -78,7 +81,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          hf upload "$SPACE_ID" "$BUNDLE_DIR" . \
+          python -m huggingface_hub.cli.hf upload "$SPACE_ID" "$BUNDLE_DIR" . \
             --repo-type space \
             --commit-message "Publish generated wrapper for ${{ github.sha }}"
 
@@ -88,7 +91,8 @@ jobs:
         run: |
           mkdir "$READBACK_DIR"
           for file in Dockerfile README.md hfs-dev.toml BUILD_SOURCE.txt .dockerignore; do
-            hf download "$SPACE_ID" "$file" --repo-type space --local-dir "$READBACK_DIR"
+            python -m huggingface_hub.cli.hf download \
+              "$SPACE_ID" "$file" --repo-type space --local-dir "$READBACK_DIR"
             cmp "$BUNDLE_DIR/$file" "$READBACK_DIR/$file"
           done
           python - <<'PY'

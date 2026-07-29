@@ -213,15 +213,23 @@ for invariant in (
 publish = text(".github/workflows/sync-to-hf-space.yml")
 require("workflow_dispatch:" in publish and "confirm:" in publish and "confirm == 'PUBLISH_WRAPPER'" in publish,
         "publish workflow must require workflow_dispatch confirmation")
-require("huggingface-cli" in publish or "hf upload" in publish,
-        "publish workflow must use the Hugging Face CLI")
+require("python -m huggingface_hub.cli.hf upload" in publish,
+        "publish workflow must use the Hugging Face module CLI")
 require("--delete" not in publish, "publish workflow must not delete remote files")
 require("candidate Space must be private" in publish and "refusing non-wrapper Space tree" in publish,
         "publish workflow must preflight private candidate and wrapper allowlist")
 require("full Space tree readback" in publish,
         "publish workflow must read back the complete wrapper tree")
-require("huggingface_hub==1.24.0" in publish,
-        "publish workflow must install a pinned Hugging Face CLI")
+for invariant in (
+    "huggingface_hub==1.5.0",
+    "click==8.3.1",
+    "python -m huggingface_hub.cli.hf --help",
+    "python -m huggingface_hub.cli.hf upload --help",
+    "python -m huggingface_hub.cli.hf download --help",
+):
+    require(invariant in publish, f"publish workflow missing pinned module CLI contract: {invariant}")
+require(re.search(r"(?m)^\s+hf (?:upload|download|spaces|buckets|repos)\b", publish) is None,
+        "publish workflow may not use the bare hf console entrypoint")
 require("cmp \"$BUNDLE_DIR/$file\" \"$READBACK_DIR/$file\"" in publish,
         "publish workflow must compare the critical CLI readback files with the wrapper bundle")
 require("git push" not in publish and "--force" not in publish and "git remote" not in publish,
