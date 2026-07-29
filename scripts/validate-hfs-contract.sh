@@ -216,8 +216,10 @@ require("workflow_dispatch:" in publish and "confirm:" in publish and "confirm =
 require("python -m huggingface_hub.cli.hf upload" in publish,
         "publish workflow must use the Hugging Face module CLI")
 require("--delete" not in publish, "publish workflow must not delete remote files")
-require("candidate Space must be private" in publish and "refusing non-wrapper Space tree" in publish,
-        "publish workflow must preflight private candidate and wrapper allowlist")
+require("FORMAL_SPACE: BlueSkyXN/ImageMagickAPI-HFS" in publish,
+        "publish workflow must pin the canonical production Space id")
+require("target Space must be private before wrapper upload" in publish and "refusing non-wrapper Space tree" in publish,
+        "publish workflow must preflight private candidate/production targets and wrapper allowlist")
 require("full Space tree readback" in publish,
         "publish workflow must read back the complete wrapper tree")
 for invariant in (
@@ -234,6 +236,28 @@ require("cmp \"$BUNDLE_DIR/$file\" \"$READBACK_DIR/$file\"" in publish,
         "publish workflow must compare the critical CLI readback files with the wrapper bundle")
 require("git push" not in publish and "--force" not in publish and "git remote" not in publish,
         "publish workflow may not use Git remotes, push, or force-push")
+upload_offset = publish.index('python -m huggingface_hub.cli.hf upload "$SPACE_ID"')
+required_before_upload = (
+    'if os.environ["HFS_TARGET"] == "production" and space_id != os.environ["FORMAL_SPACE"]:',
+    "if info.private is not True:",
+    "refusing non-wrapper Space tree",
+    'if [ "$HFS_TARGET" = production ]; then',
+    'test "$GITHUB_REF" = "refs/heads/main"',
+    "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main",
+    'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
+    'test "$(git rev-parse origin/main)" = "$GITHUB_SHA"',
+)
+for fragment in required_before_upload:
+    try:
+        offset = publish.index(fragment)
+    except ValueError:
+        require(False, f"publish workflow missing formal pre-upload gate: {fragment}")
+        continue
+    require(offset < upload_offset, f"formal publish gate must run before the first HF upload: {fragment}")
+production_gate = publish.find('if [ "$HFS_TARGET" = production ]; then')
+fetch_gate = publish.find("git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main")
+require(0 <= production_gate < fetch_gate < upload_offset,
+        "fresh origin/main fetch must be in the production-only gate immediately before upload")
 verify = text(".github/workflows/hfs-verify.yml")
 require("pull_request:" in verify and "push:" in verify and "main" in verify,
         "verify workflow must run for PRs and main")
