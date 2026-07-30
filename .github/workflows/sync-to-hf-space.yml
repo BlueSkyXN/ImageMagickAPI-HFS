@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Select the fixed candidate or canonical Preview manifest (legacy option name: production)
+        description: "Select the fixed candidate or canonical Preview manifest (legacy option name: production)"
         required: true
         type: choice
         options: [candidate, production]
