@@ -69,7 +69,7 @@ curl --fail http://localhost:8000/health
 
 `hfs-dev.toml` 仅记录这些键名及 HFS v2.1 语义，绝不记录值或凭据。项目分类为
 Preview，canonical profile 的角色是 `primary`；日常 Preview 变更允许直接更新当前 Space。
-candidate profile 只用于高风险变更的可选隔离验证，不是常规前置门禁。复制 `.env.example`
+Space visibility 声明为 Protected，登记的 Bucket visibility 声明为 Private。candidate profile 只用于高风险变更的可选隔离验证，不是常规前置门禁。复制 `.env.example`
 用于本地非敏感配置；未来如增加 Secret，必须先写入 manifest 声明的 Git ignored 本地明文
 来源，不能把 HF Secret 当唯一事实源。不要提交 `.env` 或任何凭据文件。
 
