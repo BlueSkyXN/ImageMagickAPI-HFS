@@ -108,7 +108,7 @@ mkdir /tmp/imagemagickapi-hfs-space
 ./cloud/hfs/export_space_bundle.sh --output /tmp/imagemagickapi-hfs-space --commit HEAD
 ```
 
-发布工作流 `.github/workflows/sync-to-hf-space.yml` 只能通过 `workflow_dispatch` 手动触发，且必须输入 `confirm=PUBLISH_WRAPPER`。candidate/canonical preview 由独立 manifest 固定目标；workflow 中保留的 `production` target 名称只是兼容输入。workflow 在写入前拒绝非 private candidate 或含 allowlist 外文件的旧 Space，不自动删除远端内容，写入后下载比对全部五个文件并回读完整 tree。旧全仓 Space 的清理必须走单独 owner approval。不要使用 Git remote、token URL、`git push` 或 force-push 来部署 Space。
+发布工作流 `.github/workflows/sync-to-hf-space.yml` 只能通过 `workflow_dispatch` 手动触发，且必须输入 `confirm=PUBLISH_WRAPPER`。candidate/canonical preview 由独立 manifest 固定目标；workflow 中保留的 `production` target 名称只是兼容输入。production target 必须显式等于 canonical `BlueSkyXN/ImageMagickAPI-HFS`，上传紧前会重新 fetch `origin/main`，并要求 workflow ref 为 `refs/heads/main`、checkout `HEAD`、`GITHUB_SHA` 与最新 `origin/main` 完全相等；candidate 保留所选手动触发 ref 的既有语义。canonical target、visibility、thin-wrapper tree 和 production main provenance 等 gate 全部先于首次 HF upload；workflow 不自动删除远端内容，写入后下载比对全部五个文件并回读完整 tree。旧全仓 Space 的清理必须走单独 owner approval。不要使用 Git remote、token URL、`git push` 或 force-push 来部署 Space。
 
 ## 分层验证
 

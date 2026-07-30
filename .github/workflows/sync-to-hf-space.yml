@@ -21,6 +21,7 @@ jobs:
     if: github.event.inputs.confirm == 'PUBLISH_WRAPPER'
     runs-on: ubuntu-latest
     env:
+      FORMAL_SPACE: BlueSkyXN/ImageMagickAPI-HFS
       HFS_TARGET: ${{ inputs.target }}
       HFS_MANIFEST: ${{ inputs.target == 'candidate' && 'hfs-dev.candidate.toml' || 'hfs-dev.toml' }}
       BUNDLE_DIR: .hfs-export
@@ -47,8 +48,12 @@ jobs:
 
       - name: Install Hugging Face CLI
         run: |
-          python -m pip install --disable-pip-version-check "huggingface_hub==1.24.0"
-          hf version
+          python -m pip install --disable-pip-version-check "huggingface_hub==1.25.1" "click==8.4.2"
+          python -m huggingface_hub.cli.hf version
+          python -m huggingface_hub.cli.hf --help >/dev/null
+          python -m huggingface_hub.cli.hf repos settings --help | grep -- --protected
+          python -m huggingface_hub.cli.hf upload --help >/dev/null
+          python -m huggingface_hub.cli.hf download --help >/dev/null
 
       - name: Resolve and preflight fixed target Space
         env:
@@ -62,10 +67,12 @@ jobs:
 
           manifest = tomllib.loads(Path(os.environ["HFS_MANIFEST"]).read_text(encoding="utf-8"))
           space_id = manifest["space"]
+          if os.environ["HFS_TARGET"] == "production" and space_id != os.environ["FORMAL_SPACE"]:
+              raise SystemExit("production manifest must select the canonical ImageMagickAPI-HFS Space")
           api = HfApi(token=os.environ["HF_TOKEN"])
           info = api.repo_info(repo_id=space_id, repo_type="space")
-          if os.environ["HFS_TARGET"] == "candidate" and not info.private:
-              raise SystemExit("candidate Space must be private")
+          if info.private is not True:
+              raise SystemExit("target Space must be private before wrapper upload")
           expected = {".dockerignore", "BUILD_SOURCE.txt", "Dockerfile", "README.md", "hfs-dev.toml"}
           unexpected = set(api.list_repo_files(repo_id=space_id, repo_type="space")) - expected - {".gitattributes"}
           if unexpected:
@@ -78,7 +85,14 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          hf upload "$SPACE_ID" "$BUNDLE_DIR" . \
+          set -euo pipefail
+          if [ "$HFS_TARGET" = production ]; then
+            test "$GITHUB_REF" = "refs/heads/main"
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+            test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
+          fi
+          python -m huggingface_hub.cli.hf upload "$SPACE_ID" "$BUNDLE_DIR" . \
             --repo-type space \
             --commit-message "Publish generated wrapper for ${{ github.sha }}"
 
@@ -88,7 +102,8 @@ jobs:
         run: |
           mkdir "$READBACK_DIR"
           for file in Dockerfile README.md hfs-dev.toml BUILD_SOURCE.txt .dockerignore; do
-            hf download "$SPACE_ID" "$file" --repo-type space --local-dir "$READBACK_DIR"
+            python -m huggingface_hub.cli.hf download \
+              "$SPACE_ID" "$file" --repo-type space --local-dir "$READBACK_DIR"
             cmp "$BUNDLE_DIR/$file" "$READBACK_DIR/$file"
           done
           python - <<'PY'

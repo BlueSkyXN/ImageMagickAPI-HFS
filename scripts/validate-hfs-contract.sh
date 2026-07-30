@@ -47,6 +47,8 @@ expected_metadata = {
     "space": "BlueSkyXN/ImageMagickAPI-HFS",
     "project_class": "preview",
     "target_role": "primary",
+    "space_visibility": "protected",
+    "bucket_visibility": "private",
     "sovereignty": "sovereign",
     "lane": "source",
     "version_source": "commit",
@@ -221,19 +223,52 @@ for invariant in (
 publish = text(".github/workflows/sync-to-hf-space.yml")
 require("workflow_dispatch:" in publish and "confirm:" in publish and "confirm == 'PUBLISH_WRAPPER'" in publish,
         "publish workflow must require workflow_dispatch confirmation")
-require("huggingface-cli" in publish or "hf upload" in publish,
-        "publish workflow must use the Hugging Face CLI")
+require("python -m huggingface_hub.cli.hf upload" in publish,
+        "publish workflow must use the Hugging Face module CLI")
 require("--delete" not in publish, "publish workflow must not delete remote files")
-require("candidate Space must be private" in publish and "refusing non-wrapper Space tree" in publish,
-        "publish workflow must preflight private candidate and wrapper allowlist")
+require("FORMAL_SPACE: BlueSkyXN/ImageMagickAPI-HFS" in publish,
+        "publish workflow must pin the canonical production Space id")
+require("target Space must be private before wrapper upload" in publish and "refusing non-wrapper Space tree" in publish,
+        "publish workflow must preflight private candidate/production targets and wrapper allowlist")
 require("full Space tree readback" in publish,
         "publish workflow must read back the complete wrapper tree")
-require("huggingface_hub==1.24.0" in publish,
-        "publish workflow must install a pinned Hugging Face CLI")
+for invariant in (
+    "huggingface_hub==1.25.1",
+    "click==8.4.2",
+    "repos settings --help | grep -- --protected",
+    "python -m huggingface_hub.cli.hf --help",
+    "python -m huggingface_hub.cli.hf upload --help",
+    "python -m huggingface_hub.cli.hf download --help",
+):
+    require(invariant in publish, f"publish workflow missing pinned module CLI contract: {invariant}")
+require(re.search(r"(?m)^\s+hf (?:upload|download|spaces|buckets|repos)\b", publish) is None,
+        "publish workflow may not use the bare hf console entrypoint")
 require("cmp \"$BUNDLE_DIR/$file\" \"$READBACK_DIR/$file\"" in publish,
         "publish workflow must compare the critical CLI readback files with the wrapper bundle")
 require("git push" not in publish and "--force" not in publish and "git remote" not in publish,
         "publish workflow may not use Git remotes, push, or force-push")
+upload_offset = publish.index('python -m huggingface_hub.cli.hf upload "$SPACE_ID"')
+required_before_upload = (
+    'if os.environ["HFS_TARGET"] == "production" and space_id != os.environ["FORMAL_SPACE"]:',
+    "if info.private is not True:",
+    "refusing non-wrapper Space tree",
+    'if [ "$HFS_TARGET" = production ]; then',
+    'test "$GITHUB_REF" = "refs/heads/main"',
+    "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main",
+    'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
+    'test "$(git rev-parse origin/main)" = "$GITHUB_SHA"',
+)
+for fragment in required_before_upload:
+    try:
+        offset = publish.index(fragment)
+    except ValueError:
+        require(False, f"publish workflow missing formal pre-upload gate: {fragment}")
+        continue
+    require(offset < upload_offset, f"formal publish gate must run before the first HF upload: {fragment}")
+production_gate = publish.find('if [ "$HFS_TARGET" = production ]; then')
+fetch_gate = publish.find("git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main")
+require(0 <= production_gate < fetch_gate < upload_offset,
+        "fresh origin/main fetch must be in the production-only gate immediately before upload")
 verify = text(".github/workflows/hfs-verify.yml")
 require("pull_request:" in verify and "push:" in verify and "main" in verify,
         "verify workflow must run for PRs and main")
