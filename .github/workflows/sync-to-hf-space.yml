@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Select the fixed candidate or production manifest
+        description: "Select the fixed candidate or canonical Preview manifest (legacy option name: production)"
         required: true
         type: choice
         options: [candidate, production]
@@ -48,9 +48,10 @@ jobs:
 
       - name: Install Hugging Face CLI
         run: |
-          python -m pip install --disable-pip-version-check "huggingface_hub==1.5.0" "click==8.3.3"
+          python -m pip install --disable-pip-version-check "huggingface_hub==1.25.1" "click==8.4.2"
           python -m huggingface_hub.cli.hf version
           python -m huggingface_hub.cli.hf --help >/dev/null
+          python -m huggingface_hub.cli.hf repos settings --help | grep -- --protected
           python -m huggingface_hub.cli.hf upload --help >/dev/null
           python -m huggingface_hub.cli.hf download --help >/dev/null
 
