@@ -1,5 +1,5 @@
 #!/bin/sh
-# Validate the HFS v2 source and generated-wrapper contract without network access.
+# Validate the HFS v3.0 source and generated-wrapper contract without network access.
 set -eu
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -39,23 +39,32 @@ def require(condition, message):
 def text(relative):
     return (root / relative).read_text(encoding="utf-8")
 
-# HFS v2 metadata: exact semantics and environment-name-only classifications.
+# HFS v3 metadata: exact semantics and environment-name-only classifications.
 config = tomllib.loads(text("hfs-dev.toml"))
 expected_metadata = {
-    "standard": "2.0",
+    "standard": "3.0",
     "project": "imagemagickapi-hfs",
     "space": "BlueSkyXN/ImageMagickAPI-HFS",
+    "project_class": "preview",
+    "target_role": "primary",
+    "space_visibility": "protected",
+    "bucket_visibility": "private",
     "sovereignty": "sovereign",
     "lane": "source",
     "version_source": "commit",
+    "env_file": ".env",
 }
 require({key: config.get(key) for key in expected_metadata} == expected_metadata,
-        "hfs-dev.toml metadata must match the HFS v2 source-lane contract")
+        "hfs-dev.toml metadata must match the HFS v3.0 source-lane contract")
 candidate = tomllib.loads(text("hfs-dev.candidate.toml"))
-require(candidate.get("space") == "BlueSkyXN/ImageMagickAPI-HFS-v2-candidate",
-        "candidate manifest must use the fixed v2 candidate Space")
+require(candidate.get("space") == "BlueSkyXN/ImageMagickAPI-HFS-v3-candidate",
+        "candidate manifest must use the fixed v3 candidate Space")
+require(candidate.get("project_class") == "preview" and candidate.get("target_role") == "candidate",
+        "candidate manifest must remain an optional preview candidate")
+require(candidate.get("env_file") == "local/hfs-targets/candidate.env",
+        "candidate manifest must use its isolated local plaintext ledger")
 for key in sorted(set(config) | set(candidate)):
-    if key != "space":
+    if key not in {"space", "target_role", "env_file"}:
         require(config.get(key) == candidate.get(key), f"candidate manifest differs at {key}")
 require(set(config) == set(expected_metadata) | {"local_only", "secrets", "variables"},
         "hfs-dev.toml may contain only required metadata and root Settings fields")
@@ -223,8 +232,9 @@ require("target Space must be private before wrapper upload" in publish and "ref
 require("full Space tree readback" in publish,
         "publish workflow must read back the complete wrapper tree")
 for invariant in (
-    "huggingface_hub==1.5.0",
-    "click==8.3.3",
+    "huggingface_hub==1.25.1",
+    "click==8.4.2",
+    "repos settings --help | grep -- --protected",
     "python -m huggingface_hub.cli.hf --help",
     "python -m huggingface_hub.cli.hf upload --help",
     "python -m huggingface_hub.cli.hf download --help",
