@@ -1,5 +1,5 @@
 #!/bin/sh
-# Validate the HFS v2.1 source and generated-wrapper contract without network access.
+# Validate the HFS v3.0 source and generated-wrapper contract without network access.
 set -eu
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -39,10 +39,10 @@ def require(condition, message):
 def text(relative):
     return (root / relative).read_text(encoding="utf-8")
 
-# HFS v2 metadata: exact semantics and environment-name-only classifications.
+# HFS v3 metadata: exact semantics and environment-name-only classifications.
 config = tomllib.loads(text("hfs-dev.toml"))
 expected_metadata = {
-    "standard": "2.1",
+    "standard": "3.0",
     "project": "imagemagickapi-hfs",
     "space": "BlueSkyXN/ImageMagickAPI-HFS",
     "project_class": "preview",
@@ -53,13 +53,12 @@ expected_metadata = {
     "lane": "source",
     "version_source": "commit",
     "env_file": ".env",
-    "secret_files": [],
 }
 require({key: config.get(key) for key in expected_metadata} == expected_metadata,
-        "hfs-dev.toml metadata must match the HFS v2.1 source-lane contract")
+        "hfs-dev.toml metadata must match the HFS v3.0 source-lane contract")
 candidate = tomllib.loads(text("hfs-dev.candidate.toml"))
-require(candidate.get("space") == "BlueSkyXN/ImageMagickAPI-HFS-v2-candidate",
-        "candidate manifest must use the fixed v2 candidate Space")
+require(candidate.get("space") == "BlueSkyXN/ImageMagickAPI-HFS-v3-candidate",
+        "candidate manifest must use the fixed v3 candidate Space")
 require(candidate.get("project_class") == "preview" and candidate.get("target_role") == "candidate",
         "candidate manifest must remain an optional preview candidate")
 require(candidate.get("env_file") == "local/hfs-targets/candidate.env",

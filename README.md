@@ -67,7 +67,7 @@ curl --fail http://localhost:8000/health
 | variables | `WORKERS`, `MAX_CONCURRENT_PER_WORKER` | 默认为 `4` workers、每 worker `3` 个并发转换。 |
 | secrets | 无 | 当前服务没有已分类的运行时 secret。 |
 
-`hfs-dev.toml` 仅记录这些键名及 HFS v2.1 语义，绝不记录值或凭据。项目分类为
+`hfs-dev.toml` 仅记录这些键名及 HFS v3.0 语义，绝不记录值或凭据。项目分类为
 Preview，canonical profile 的角色是 `primary`；日常 Preview 变更允许直接更新当前 Space。
 Space visibility 声明为 Protected，登记的 Bucket visibility 声明为 Private。candidate profile 只用于高风险变更的可选隔离验证，不是常规前置门禁。复制 `.env.example`
 用于本地非敏感配置；未来如增加 Secret，必须先写入 manifest 声明的 Git ignored 本地明文
@@ -116,7 +116,7 @@ mkdir /tmp/imagemagickapi-hfs-space
 ./scripts/static-check.sh
 ```
 
-静态检查以 AST 和 shell 语法解析运行，不导入应用且不写 Python bytecode；它还调用 `scripts/validate-hfs-contract.sh`，验证 HFS v2.1 TOML 精确语义、环境键分类、导出 allowlist、完整 SHA provenance、运行时约束、入口/健康检查、忽略边界和工作流安全边界。
+静态检查以 AST 和 shell 语法解析运行，不导入应用且不写 Python bytecode；它还调用 `scripts/validate-hfs-contract.sh`，验证 HFS v3.0 TOML 精确语义、环境键分类、导出 allowlist、完整 SHA provenance、运行时约束、入口/健康检查、忽略边界和工作流安全边界。
 
 `.github/workflows/hfs-verify.yml` 会在 Pull Request 和 `main` 上执行这些检查，导出 wrapper、构建 Docker 镜像、启动容器并运行格式 smoke test。它不使用 secrets。`cloud/hfs/smoke-test.sh` 仅用 Python 标准库生成一个小 PNG，等待 `/health` 后测试 WebP、AVIF 和 HEIF 转换的成功 HTTP 状态、`Content-Type` 与 RIFF/WEBP 或 ISO-BMFF `ftyp`/兼容品牌。
 

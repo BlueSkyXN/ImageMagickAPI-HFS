@@ -1,6 +1,6 @@
-standard = "2.1"
+standard = "3.0"
 project = "imagemagickapi-hfs"
-space = "BlueSkyXN/ImageMagickAPI-HFS-v2-candidate"
+space = "BlueSkyXN/ImageMagickAPI-HFS-v3-candidate"
 project_class = "preview"
 target_role = "candidate"
 space_visibility = "protected"
@@ -9,7 +9,6 @@ sovereignty = "sovereign"
 lane = "source"
 version_source = "commit"
 env_file = "local/hfs-targets/candidate.env"
-secret_files = []
 
 local_only = ["TEMP_DIR"]
 secrets = []
