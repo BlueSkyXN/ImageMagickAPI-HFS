@@ -51,6 +51,12 @@ jobs:
       - name: Smoke test homepage and WebP, AVIF, HEIF conversion
         run: ./cloud/hfs/smoke-test.sh "http://127.0.0.1:$SMOKE_PORT"
 
+      - name: Check AVIF parameters and PNG JPEG WebP HEIC inputs
+        run: |
+          docker exec "$CONTAINER_NAME" mkdir -p /app/tests
+          docker cp tests/check_avif.py "$CONTAINER_NAME:/app/tests/check_avif.py"
+          docker exec "$CONTAINER_NAME" python -B /app/tests/check_avif.py http://127.0.0.1:8000
+
       - name: Print container logs after a failure
         if: failure()
         run: docker logs "$CONTAINER_NAME"

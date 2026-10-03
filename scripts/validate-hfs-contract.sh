@@ -122,8 +122,12 @@ require("git checkout --detach \"$SOURCE_COMMIT\"" in template,
 require("test \"$(git rev-parse HEAD)\" = \"$SOURCE_COMMIT\"" in template,
         "Space Dockerfile must assert the checked-out HEAD")
 copy_lines = [line.strip() for line in template.splitlines() if line.strip().startswith("COPY ")]
-require(copy_lines and all("--from=source" in line for line in copy_lines),
-        "runtime product files may be copied only from the source stage")
+require(copy_lines and all("--from=source" in line or
+                          line == "COPY --from=imagemagick-build /opt/imagemagick /opt/imagemagick"
+                          for line in copy_lines),
+        "product files must come from source; ImageMagick binaries may come from the build stage")
+require("COPY --from=source /src/scripts/build-imagemagick.sh /tmp/build-imagemagick.sh" in copy_lines,
+        "ImageMagick build script must come from the pinned source stage")
 for copy_line in (
     "COPY --from=source /src/requirements.txt ./",
     "COPY --from=source /src/main.py ./",
@@ -149,6 +153,17 @@ required_docker = {
 for dockerfile_name, dockerfile in (("Dockerfile", text("Dockerfile")), ("Dockerfile.template", template)):
     for invariant in required_docker:
         require(invariant in dockerfile, f"{dockerfile_name} missing runtime invariant: {invariant}")
+
+build_script = text("scripts/build-imagemagick.sh")
+for invariant in ("version=7.1.2-32", "sha256sum --check --strict", "--with-heic=yes",
+                  "--with-quantum-depth=16", "--disable-hdri"):
+    require(invariant in build_script, f"ImageMagick source build missing: {invariant}")
+for dockerfile_name, dockerfile in (("Dockerfile", text("Dockerfile")), ("Dockerfile.template", template)):
+    require("ENV PATH=/opt/imagemagick/bin:$PATH" in dockerfile and
+            "ENV LD_LIBRARY_PATH=/opt/imagemagick/lib" in dockerfile,
+            f"{dockerfile_name} must run the verified ImageMagick build")
+    require("libheif-plugin-libde265" in dockerfile,
+            f"{dockerfile_name} must install HEIC decoding support")
 
 # Entrypoint and health endpoint fail closed, without spawning external which.
 entrypoint = text("entrypoint.sh")

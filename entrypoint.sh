@@ -33,6 +33,13 @@ if ! heif-enc --help >/dev/null 2>&1; then
 fi
 printf '%s\n' "  magick: $(command -v magick)"
 printf '%s\n' "  heif-enc: $(command -v heif-enc)"
+magick --version
+heif-enc --version
+heif-enc --list-encoders
+if ! heif-enc --avif --encoder aom --params; then
+    printf '%s\n' "fatal: AOM AVIF encoder parameters could not be inspected" >&2
+    exit 1
+fi
 
 # 确保使用正确的端口变量
 PORT="${PORT:-8000}"

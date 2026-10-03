@@ -15,7 +15,7 @@ print("Python syntax parsing passed")
 PY
 
 for script in entrypoint.sh cloud/hfs/export_space_bundle.sh cloud/hfs/smoke-test.sh \
-    scripts/validate-hfs-contract.sh scripts/static-check.sh; do
+    scripts/validate-hfs-contract.sh scripts/static-check.sh scripts/build-imagemagick.sh; do
     sh -n "$script"
 done
 printf '%s\n' "Shell syntax parsing passed"
