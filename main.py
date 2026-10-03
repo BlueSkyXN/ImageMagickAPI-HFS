@@ -327,8 +327,11 @@ async def _probe_dependency(name: str, probe_arg: str) -> dict:
         return {"status": "failed", "path": executable, "detail": "probe exited unsuccessfully"}
 
     details = {"status": "available", "path": executable}
+    output = stdout.decode(errors="replace").strip()
     if name == "magick":
-        details["version"] = stdout.decode(errors="replace").split("\n")[0]
+        details["version"] = output.split("\n")[0]
+    elif name == "heif-enc":
+        details["version"] = output.split("\n")[0]
     return details
 
 
@@ -357,7 +360,7 @@ async def health_check():
     """Report dependency failures as a non-2xx response before serving conversions."""
     dependencies = {
         "magick": await _probe_dependency("magick", "--version"),
-        "heif_enc": await _probe_dependency("heif-enc", "--help"),
+        "heif_enc": await _probe_dependency("heif-enc", "--version"),
     }
     magick = dependencies["magick"]
     heif_enc = dependencies["heif_enc"]

@@ -57,7 +57,9 @@ curl --fail http://localhost:8000/health
 
 ## 运行时与环境变量
 
-镜像基于 `python:3.10-slim`，安装 ImageMagick 和 `libheif-examples`（提供 `heif-enc`）。入口脚本在启动 Uvicorn 前会验证两个可执行文件及其轻量探测；失败即退出。
+镜像基于 `python:3.10-slim`。ImageMagick 固定为当前稳定版 `7.1.2-32`，从官方发布源码构建并校验 SHA-256，而不是依赖发行版较旧的 ImageMagick 包。构建为 Q16、非 HDRI，启用 HEIC/AVIF、PNG、JPEG、WebP、TIFF 和 LCMS；运行镜像只复制安装产物，不包含编译工具。`libheif-examples` 提供 `heif-enc`，配套安装 AOM/x265 编码及 HEIC/AVIF 解码插件。
+
+入口脚本验证依赖，并记录 ImageMagick、libheif 和 AOM 可用参数。`/health` 同时显示 ImageMagick/libheif 版本和转换线程配置。ImageMagick 升级不等于 AOM 编码器升级，也不会改变现有 `setting` 映射。
 
 | 角色 | 键名 | 说明 |
 | --- | --- | --- |
@@ -126,6 +128,8 @@ mkdir /tmp/imagemagickapi-hfs-space
 `.github/workflows/hfs-verify.yml` 会在 Pull Request 和 `main` 上执行这些检查，导出 wrapper、构建 Docker 镜像、运行异步/并发回归测试、启动容器并运行格式 smoke test。它不使用 secrets。`cloud/hfs/smoke-test.sh` 仅用 Python 标准库生成一个小 PNG，等待 `/health` 后检查首页以及 WebP、AVIF 和 HEIF 的有损/无损转换，包括编码速度端点；验证 HTTP 状态、`Content-Type` 与 RIFF/WEBP 或 ISO-BMFF `ftyp`/兼容品牌。
 
 安装 `requirements.txt` 后，可从仓库根目录运行 `python -B -m unittest discover -s tests -v`。这些测试不需要图像工具，覆盖编码参数、文件复制不阻塞、并发限制、总超时以及真实子进程取消/回收。
+
+`tests/check_avif.py BASE_URL` 需要本地 `magick`、`heif-enc` 和 `heif-info`；所有输出均为 AVIF，覆盖 PNG/JPEG/WebP/HEIC 输入、有损与无损、速度 0/75/100、尺寸、AVIF 品牌、透明通道、RGB 矩阵和位深，并检查 8-bit RGB/RGBA 的无损像素回读。CI 在真实运行容器内执行。当前 16-bit PNG 输入会由 `heif-enc` 默认转换为 10-bit AVIF；这不等同于源位深完全无损，不承诺 HDR/ICC/EXIF 全链路保留。
 
 `test_magick.py` 保留为历史手工测试脚本，未被自动化流程改写。
 
