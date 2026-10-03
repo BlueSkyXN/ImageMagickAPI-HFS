@@ -48,7 +48,7 @@ def main():
     print('AOM parameters:\n' + run('heif-enc', '--avif', '--encoder', 'aom', '--params'))
     formats = run('magick', '-list', 'format')
     for name in ('AVIF', 'HEIC', 'PNG', 'JPEG', 'WEBP'):
-        assert re.search(r'^\s+' + name + r'\*?\s+\S+\s+rw', formats, re.MULTILINE), name
+        assert re.search(r'^\s+' + name + r'\*?\s+(?:\S+\s+)?rw[+\-]', formats, re.MULTILINE), name
 
     with tempfile.TemporaryDirectory(prefix='avif-check-') as directory:
         root = Path(directory)
