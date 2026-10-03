@@ -33,6 +33,7 @@ import shutil
 import logging
 import uuid
 import imghdr
+from importlib.metadata import version as dist_version
 from typing import Literal
 
 # --- 1. 应用配置 ---
@@ -43,6 +44,13 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+logger.info(
+    "Runtime versions: fastapi=%s starlette=%s jinja2=%s",
+    dist_version("fastapi"),
+    dist_version("starlette"),
+    dist_version("jinja2"),
+)
 
 # 资源限制
 MAX_FILE_SIZE_MB = 200  # 允许上传的最大文件大小 (MB)
@@ -174,7 +182,7 @@ async def root(request: Request):
     返回用户友好的HTML上传表单页面。
     提供图形化界面进行图像转换，支持4套主题切换。
     """
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 async def _probe_dependency(name: str, probe_arg: str) -> dict:
     """Probe a required executable without relying on an external ``which`` command."""

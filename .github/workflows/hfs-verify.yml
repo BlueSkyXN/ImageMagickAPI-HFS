@@ -42,7 +42,7 @@ jobs:
       - name: Run generated Space image
         run: docker run --detach --name "$CONTAINER_NAME" --publish "$SMOKE_PORT:8000" "$IMAGE_NAME"
 
-      - name: Smoke test WebP, AVIF, and HEIF conversion
+      - name: Smoke test homepage and WebP, AVIF, HEIF conversion
         run: ./cloud/hfs/smoke-test.sh "http://127.0.0.1:$SMOKE_PORT"
 
       - name: Print container logs after a failure

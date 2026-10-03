@@ -36,6 +36,25 @@ wait_for_health() {
     return 1
 }
 
+verify_homepage() {
+    headers="$tmp_dir/homepage.headers"
+    body="$tmp_dir/homepage.html"
+    status=$(curl --silent --show-error --output "$body" --dump-header "$headers" \
+        --write-out '%{http_code}' "$base_url/")
+    if [ "$status" != "200" ]; then
+        printf '%s\n' "homepage returned HTTP $status instead of 200" >&2
+        return 1
+    fi
+    if ! grep -qi '^content-type:[[:space:]]*text/html' "$headers"; then
+        printf '%s\n' "homepage response is not text/html" >&2
+        return 1
+    fi
+    if [ ! -s "$body" ]; then
+        printf '%s\n' "homepage response body is empty" >&2
+        return 1
+    fi
+}
+
 verify_response() {
     format=$1
     expected_type=$2
@@ -94,6 +113,7 @@ PY
 }
 
 wait_for_health
+verify_homepage
 verify_response webp image/webp
 verify_response avif image/avif
 verify_response heif image/heif
