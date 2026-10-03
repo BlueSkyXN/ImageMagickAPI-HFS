@@ -57,7 +57,9 @@ curl --fail http://localhost:8000/health
 
 ## 运行时与环境变量
 
-镜像基于 `python:3.10-slim`。ImageMagick 固定为当前稳定版 `7.1.2-32`，从官方发布源码构建并校验 SHA-256，而不是依赖发行版较旧的 ImageMagick 包。构建为 Q16、非 HDRI，启用 HEIC/AVIF、PNG、JPEG、WebP、TIFF 和 LCMS；运行镜像只复制安装产物，不包含编译工具。`libheif-examples` 提供 `heif-enc`，配套安装 AOM/x265 编码及 HEIC/AVIF 解码插件。
+镜像基于 `python:3.10-slim`。ImageMagick 使用官方固定版本 `7.1.2-32` GCC x86_64 AppImage，并校验官方资产 SHA-256；HF 构建时只下载、解包，不编译源码，也不需要 FUSE。保留官方 Q16-HDRI 及随包解码库配置，通过官方 `AppRun` 启动，库路径仅影响 ImageMagick，不影响独立的 `heif-enc`。`libheif-examples` 及 AOM/x265 编码插件仍来自发行版软件包。
+
+官方固定资产为 Linux x86_64；在 ARM 主机本地使用 Docker 时需指定 `--platform linux/amd64`。每次升级包版本或校验值后，都应运行既有 AVIF 输入、透明通道和像素回读检查。
 
 入口脚本验证依赖，并记录 ImageMagick、libheif 和 AOM 可用参数。`/health` 同时显示 ImageMagick/libheif 版本和转换线程配置。ImageMagick 升级不等于 AOM 编码器升级，也不会改变现有 `setting` 映射。
 

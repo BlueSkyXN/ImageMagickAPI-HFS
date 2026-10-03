@@ -123,11 +123,11 @@ require("test \"$(git rev-parse HEAD)\" = \"$SOURCE_COMMIT\"" in template,
         "Space Dockerfile must assert the checked-out HEAD")
 copy_lines = [line.strip() for line in template.splitlines() if line.strip().startswith("COPY ")]
 require(copy_lines and all("--from=source" in line or
-                          line == "COPY --from=imagemagick-build /opt/imagemagick /opt/imagemagick"
+                          line == "COPY --from=imagemagick-package /opt/imagemagick /opt/imagemagick"
                           for line in copy_lines),
-        "product files must come from source; ImageMagick binaries may come from the build stage")
-require("COPY --from=source /src/scripts/build-imagemagick.sh /tmp/build-imagemagick.sh" in copy_lines,
-        "ImageMagick build script must come from the pinned source stage")
+        "product files must come from source; official binaries may come from the package stage")
+require("COPY --from=source /src/scripts/install-imagemagick.sh /tmp/install-imagemagick.sh" in copy_lines,
+        "ImageMagick installer must come from the pinned source stage")
 for copy_line in (
     "COPY --from=source /src/requirements.txt ./",
     "COPY --from=source /src/main.py ./",
@@ -154,14 +154,22 @@ for dockerfile_name, dockerfile in (("Dockerfile", text("Dockerfile")), ("Docker
     for invariant in required_docker:
         require(invariant in dockerfile, f"{dockerfile_name} missing runtime invariant: {invariant}")
 
-build_script = text("scripts/build-imagemagick.sh")
-for invariant in ("version=7.1.2-32", "sha256sum --check --strict", "--with-heic=yes",
-                  "--with-quantum-depth=16", "--disable-hdri"):
-    require(invariant in build_script, f"ImageMagick source build missing: {invariant}")
+installer = text("scripts/install-imagemagick.sh")
+for invariant in ("version=7.1.2-32", "sha256sum --check --strict", "gcc-x86_64.AppImage",
+                  "--appimage-extract", "ln -s ../AppRun /opt/imagemagick/bin/magick"):
+    require(invariant in installer, f"official ImageMagick install missing: {invariant}")
+require(re.search(r"(?m)^sha256=[0-9a-f]{64}$", installer) is not None,
+        "official ImageMagick asset must have a pinned SHA-256")
+require("./configure" not in installer and "make install" not in installer,
+        "ImageMagick must use the official binary without local compilation")
+require(not (root / "scripts/build-imagemagick.sh").exists(),
+        "obsolete ImageMagick source build script must be removed")
 for dockerfile_name, dockerfile in (("Dockerfile", text("Dockerfile")), ("Dockerfile.template", template)):
     require("ENV PATH=/opt/imagemagick/bin:$PATH" in dockerfile and
-            "ENV LD_LIBRARY_PATH=/opt/imagemagick/lib" in dockerfile,
-            f"{dockerfile_name} must run the verified ImageMagick build")
+            "ENV LD_LIBRARY_PATH=" not in dockerfile,
+            f"{dockerfile_name} must isolate AppImage libraries from heif-enc")
+    require("build-essential" not in dockerfile and "libheif-dev" not in dockerfile,
+            f"{dockerfile_name} may not compile ImageMagick")
     require("libheif-plugin-libde265" in dockerfile,
             f"{dockerfile_name} must install HEIC decoding support")
 
