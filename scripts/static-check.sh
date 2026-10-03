@@ -9,7 +9,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -B - <<'PY'
 import ast
 from pathlib import Path
 
-for path in (Path("main.py"), Path("test_magick.py")):
+for path in (Path("main.py"), Path("test_magick.py"), *Path("tests").glob("*.py")):
     ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 print("Python syntax parsing passed")
 PY

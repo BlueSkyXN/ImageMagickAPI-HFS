@@ -76,7 +76,7 @@ expected_local = {"TEMP_DIR"}
 expected_variables = {
     "PORT", "PYTHONUNBUFFERED", "MAGICK_MEMORY_LIMIT", "MAGICK_MAP_LIMIT",
     "MAGICK_DISK_LIMIT", "MAGICK_TIME_LIMIT", "MAGICK_THREAD_LIMIT", "WORKERS",
-    "MAX_CONCURRENT_PER_WORKER",
+    "MAX_CONCURRENT_PER_WORKER", "ENCODER_THREADS",
 }
 require(role_values["local_only"] == expected_local, "local_only keys must be exact")
 require(role_values["secrets"] == set(), "this service has no classified secrets")
@@ -142,7 +142,8 @@ required_docker = {
     "ENV PYTHONUNBUFFERED=1", "ENV TEMP_DIR=/app/temp",
     "ENV MAGICK_MEMORY_LIMIT=512MiB", "ENV MAGICK_MAP_LIMIT=1GiB",
     "ENV MAGICK_DISK_LIMIT=4GiB", "ENV MAGICK_TIME_LIMIT=300",
-    "ENV MAGICK_THREAD_LIMIT=2", "ENV WORKERS=4", "ENV MAX_CONCURRENT_PER_WORKER=3",
+    "ENV MAGICK_THREAD_LIMIT=2", "ENV WORKERS=1", "ENV MAX_CONCURRENT_PER_WORKER=1",
+    "ENV ENCODER_THREADS=2",
     "EXPOSE 8000",
 }
 for dockerfile_name, dockerfile in (("Dockerfile", text("Dockerfile")), ("Dockerfile.template", template)):
@@ -168,8 +169,11 @@ require("JSONResponse(status_code=503" in main_source and '"status"] = "unhealth
         "health must return non-2xx unhealthy responses")
 require("except OSError as exc:" in main_source,
         "subprocess creation errors must be handled")
-require("['heif-enc']" in main_source and "commands[1].append('--avif')" in main_source,
+require("['heif-enc']" in main_source and "_heif_encoder_command(target_format" in main_source,
         "AVIF/HEIF output must use the explicit libheif encoder path")
+for invariant in ("asyncio.to_thread(copy_file)", "f'threads={ENCODER_THREADS}'",
+                  "f'x265:pools={ENCODER_THREADS}'", "os.killpg(process.pid, signal.SIGKILL)"):
+    require(invariant in main_source, f"conversion resource control missing: {invariant}")
 for invariant in (
     "asyncio.wait_for(process.communicate(), timeout=5)",
     "process.returncode != 0",

@@ -164,8 +164,8 @@
             const mode = document.querySelector('input[name="mode"]:checked').value;
 
             if (mode === 'lossless') {
-                // 无损模式：默认最佳质量（0=最慢/最佳压缩）
-                slider.value = 0;
+                // 默认优先转换速度；像素无损性由转换模式决定。
+                slider.value = 75;
             } else {
                 // 有损模式：默认中等质量（80=高质量）
                 slider.value = 80;
@@ -197,7 +197,7 @@
                 submitBtn.textContent = originalBtnText;
                 submitBtn.disabled = false;
             }
-        }, 60000); // 60秒超时恢复
+        }, 330000); // 留出后端 300 秒处理预算及传输余量
     });
 
     // ==========================================

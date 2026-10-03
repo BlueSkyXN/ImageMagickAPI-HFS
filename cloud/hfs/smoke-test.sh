@@ -58,12 +58,14 @@ verify_homepage() {
 verify_response() {
     format=$1
     expected_type=$2
+    mode=${3:-lossy}
+    setting=${4:-80}
     output="$tmp_dir/output.$format"
     headers="$tmp_dir/$format.headers"
     status=$(curl --silent --show-error --output "$output" --dump-header "$headers" \
         --write-out '%{http_code}' --request POST \
         --form "file=@$tmp_dir/input.png;type=image/png" \
-        "$base_url/convert/$format/lossy/80")
+        "$base_url/convert/$format/$mode/$setting")
     case "$status" in 2??) ;; *)
         printf '%s\n' "$format conversion returned HTTP $status" >&2
         return 1
@@ -117,4 +119,9 @@ verify_homepage
 verify_response webp image/webp
 verify_response avif image/avif
 verify_response heif image/heif
+verify_response webp image/webp lossless 100
+verify_response avif image/avif lossless 0
+verify_response avif image/avif lossless 100
+verify_response heif image/heif lossless 0
+verify_response heif image/heif lossless 100
 printf '%s\n' "HFS format smoke test passed against $base_url"

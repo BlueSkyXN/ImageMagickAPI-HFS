@@ -33,6 +33,7 @@ import shutil
 import logging
 import uuid
 import imghdr
+import signal
 from importlib.metadata import version as dist_version
 from typing import Literal
 
@@ -54,13 +55,20 @@ logger.info(
 
 # 资源限制
 MAX_FILE_SIZE_MB = 200  # 允许上传的最大文件大小 (MB)
-TIMEOUT_SECONDS = 300   # Magick 进程执行的超时时间 (秒)
+TIMEOUT_SECONDS = 300   # 上传解析后排队、文件复制及转换的总时间预算 (秒)
 TEMP_DIR = os.getenv("TEMP_DIR", tempfile.gettempdir())  # 临时文件存储目录，优先使用环境变量，否则使用系统临时目录
 
 # 并发控制配置（防止资源过载）
-MAX_CONCURRENT_CONVERSIONS = int(os.getenv("MAX_CONCURRENT_PER_WORKER", "3"))
+MAX_CONCURRENT_CONVERSIONS = int(os.getenv("MAX_CONCURRENT_PER_WORKER", "1"))
+ENCODER_THREADS = int(os.getenv("ENCODER_THREADS", "2"))
+if MAX_CONCURRENT_CONVERSIONS < 1 or not 1 <= ENCODER_THREADS <= 64:
+    raise ValueError("MAX_CONCURRENT_PER_WORKER must be positive and ENCODER_THREADS must be 1-64")
 conversion_semaphore = asyncio.Semaphore(MAX_CONCURRENT_CONVERSIONS)
-logger.info(f"并发限制已启用: 每个worker最多 {MAX_CONCURRENT_CONVERSIONS} 个并发转换")
+logger.info(
+    "并发限制已启用: 每个worker最多 %s 个转换，编码器线程配置 %s",
+    MAX_CONCURRENT_CONVERSIONS,
+    ENCODER_THREADS,
+)
 
 # --- 2. API 参数类型定义 ---
 
@@ -102,11 +110,17 @@ async def get_upload_file_size(upload_file: UploadFile) -> int:
     Returns:
         文件大小（字节）。
     """
-    current_position = upload_file.file.tell()
-    upload_file.file.seek(0, 2)  # 移动到文件末尾
-    size = upload_file.file.tell()
-    upload_file.file.seek(current_position)  # 恢复原始指针位置
-    return size
+    if upload_file.size is not None:
+        return upload_file.size
+
+    def measure_size():
+        current_position = upload_file.file.tell()
+        upload_file.file.seek(0, 2)
+        size = upload_file.file.tell()
+        upload_file.file.seek(current_position)
+        return size
+
+    return await asyncio.to_thread(measure_size)
 
 async def validate_image_content(upload_file: UploadFile) -> bool:
     """
@@ -123,11 +137,11 @@ async def validate_image_content(upload_file: UploadFile) -> bool:
     """
     # 保存当前位置
     current_position = upload_file.file.tell()
-    upload_file.file.seek(0)
-    
+    await upload_file.seek(0)
+
     # 读取文件头部用于检测
-    file_header = upload_file.file.read(32)
-    upload_file.file.seek(current_position)  # 恢复原始指针位置
+    file_header = await upload_file.read(32)
+    await upload_file.seek(current_position)  # 恢复原始指针位置
     
     # 使用 imghdr 检测图像类型
     img_type = imghdr.what(None, h=file_header)
@@ -173,6 +187,104 @@ def cleanup_temp_dir(temp_dir: str):
             logger.info(f"后台清理：已成功删除 {temp_dir}")
     except Exception as cleanup_error:
         logger.error(f"后台清理：删除 {temp_dir} 失败: {cleanup_error}", exc_info=True)
+
+async def _save_upload(upload_file: UploadFile, input_path: str):
+    def copy_file():
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(upload_file.file, buffer, length=1024 * 1024)
+
+    copy_task = asyncio.create_task(asyncio.to_thread(copy_file))
+    try:
+        await asyncio.shield(copy_task)
+    except asyncio.CancelledError:
+        # A running copy thread cannot be cancelled; drain it before closing its file.
+        await asyncio.shield(copy_task)
+        raise
+
+
+def _heif_encoder_command(target_format: str, mode: str, setting: int,
+                          input_path: str, output_path: str) -> list[str]:
+    command = ['heif-enc']
+    if target_format == "avif":
+        speed = round(setting * 8 / 100) if mode == "lossless" else 6
+        command.extend(['--avif', '--encoder', 'aom',
+                        '-p', f'threads={ENCODER_THREADS}', '-p', f'speed={speed}'])
+    else:
+        presets = ['veryslow', 'slower', 'slow', 'medium', 'fast',
+                   'faster', 'veryfast', 'superfast', 'ultrafast']
+        preset = presets[round(setting * (len(presets) - 1) / 100)] if mode == "lossless" else 'medium'
+        command.extend(['--encoder', 'x265', '-p', f'preset={preset}',
+                        '-p', f'x265:pools={ENCODER_THREADS}',
+                        '-p', 'x265:frame-threads=1'])
+    if mode == "lossless":
+        command.append('--lossless')
+    else:
+        command.extend(['--quality', str(setting)])
+    command.extend(['--output', output_path, input_path])
+    return command
+
+
+async def _stop_conversion_process(process, communication):
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGKILL)
+        elif process.returncode is None:
+            process.kill()
+    except ProcessLookupError:
+        pass
+    await asyncio.shield(communication)
+
+
+async def _run_conversion_command(command: list[str]):
+    launch = asyncio.create_task(asyncio.subprocess.create_subprocess_exec(
+        *command,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=os.name == "posix",
+    ))
+    try:
+        process = await asyncio.shield(launch)
+    except asyncio.CancelledError:
+        # Cancellation can arrive after the OS created the child but before launch returned.
+        try:
+            process = await asyncio.shield(launch)
+        except OSError:
+            raise asyncio.CancelledError
+        await _stop_conversion_process(process, asyncio.create_task(process.communicate()))
+        raise
+    except OSError as exc:
+        logger.error("无法启动图像转换进程: %s", exc)
+        raise HTTPException(status_code=503, detail="Image conversion dependency is unavailable.") from exc
+
+    communication = asyncio.create_task(process.communicate())
+    try:
+        _, stderr = await asyncio.shield(communication)
+    except asyncio.CancelledError:
+        await _stop_conversion_process(process, communication)
+        raise
+
+    if process.returncode != 0:
+        logger.error("Image conversion command failed: %s", stderr.decode(errors="replace"))
+        raise HTTPException(
+            status_code=500,
+            detail="Image conversion failed. Please check your input file and parameters.",
+        )
+
+
+async def _convert_with_limit(file: UploadFile, input_path: str, commands: list[list[str]]):
+    loop = asyncio.get_running_loop()
+    queued_at = loop.time()
+    async with conversion_semaphore:
+        logger.info("获取并发许可，排队耗时 %.3fs", loop.time() - queued_at)
+        started_at = loop.time()
+        await _save_upload(file, input_path)
+        logger.info("文件保存成功，耗时 %.3fs", loop.time() - started_at)
+        for command in commands:
+            started_at = loop.time()
+            logger.info("正在执行命令: %s", ' '.join(command))
+            await _run_conversion_command(command)
+            logger.info("%s 处理耗时 %.3fs", command[0], loop.time() - started_at)
+
 
 # --- 5. API 端点 ---
 
@@ -256,6 +368,8 @@ async def health_check():
         "resource_limits": {
             "max_file_size_mb": MAX_FILE_SIZE_MB,
             "timeout_seconds": TIMEOUT_SECONDS,
+            "max_concurrent_per_worker": MAX_CONCURRENT_CONVERSIONS,
+            "encoder_threads": ENCODER_THREADS,
         },
     }
 
@@ -352,12 +466,6 @@ async def _perform_conversion(
     logger.info(f"正在临时目录中处理: {temp_dir}")
 
     try:
-        # 5. 保存上传的文件到临时输入路径
-        logger.info(f"正在保存上传的文件 '{file.filename}' 至 '{input_path}'")
-        with open(input_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        logger.info("文件保存成功。")
-
         # 6. 动态构建转换命令。Debian 的 ImageMagick 包不一定编译了
         # HEIF coder；在这种环境里仅使用 output.avif/output.heif 后缀会
         # 静默写出 PNG。AVIF/HEIF 因此由已校验存在的 heif-enc 负责，
@@ -433,48 +541,18 @@ async def _perform_conversion(
             # heif-enc 只消费单张静态输入；明确选择第一帧，避免
             # ImageMagick 按未知 AVIF/HEIF coder 静默生成错误格式。
             commands = [
-                ['magick', f'{input_path}[0]', encoder_input_path],
-                ['heif-enc'],
+                ['magick', f'{input_path}[0]', '-define', 'png:compression-level=1', encoder_input_path],
+                _heif_encoder_command(target_format, mode, setting, encoder_input_path, output_path),
             ]
-            if target_format == "avif":
-                commands[1].append('--avif')
-            if mode == "lossless":
-                commands[1].append('--lossless')
-            else:
-                commands[1].extend(['--quality', str(setting)])
-            commands[1].extend(['--output', output_path, encoder_input_path])
         else:
             cmd.append(output_path)
             commands = [cmd]
 
-        # 8. 异步执行转换命令 (使用信号量限制并发)
-        async with conversion_semaphore:
-            logger.info("获取并发许可，开始图像处理")
-            for command in commands:
-                logger.info("正在执行命令: %s", ' '.join(command))
-                try:
-                    process = await asyncio.subprocess.create_subprocess_exec(
-                        *command,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
-                    )
-                except OSError as exc:
-                    logger.error("无法启动图像转换进程: %s", exc)
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Image conversion dependency is unavailable."
-                    ) from exc
-                _, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=TIMEOUT_SECONDS
-                )
-                if process.returncode != 0:
-                    error_detail = stderr.decode(errors="replace")
-                    logger.error("Image conversion command failed: %s", error_detail)
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Image conversion failed. Please check your input file and parameters."
-                    )
+        # 上传解析完成后，排队、文件复制和全部转换阶段共享同一时间预算。
+        await asyncio.wait_for(
+            _convert_with_limit(file, input_path, commands),
+            timeout=TIMEOUT_SECONDS,
+        )
 
         # 9. 检查命令执行结果
         if not os.path.exists(output_path):
@@ -504,7 +582,7 @@ async def _perform_conversion(
         )
 
     except asyncio.TimeoutError:
-        logger.error(f"Magick 处理超时 (>{TIMEOUT_SECONDS}s): {file.filename}")
+        logger.error(f"转换任务超时 (>{TIMEOUT_SECONDS}s): {file.filename}")
         raise HTTPException(status_code=504, detail=f"Conversion timed out after {TIMEOUT_SECONDS} seconds.")
     except HTTPException as http_exc:
         # 重新抛出已知的 HTTP 异常
@@ -518,7 +596,7 @@ async def _perform_conversion(
         await file.close()
         # 备用清理：仅当未注册后台任务时立即清理
         if temp_dir is not None and not cleanup_scheduled and os.path.exists(temp_dir):
-            cleanup_temp_dir(temp_dir)
+            await asyncio.to_thread(cleanup_temp_dir, temp_dir)
 
 @app.post("/", response_class=FileResponse, summary="简化上传转换")
 async def upload_convert(
@@ -526,7 +604,7 @@ async def upload_convert(
     file: UploadFile = File(..., description="要转换的图像文件"),
     target_format: str = Form("heif", description="目标格式"),
     mode: str = Form("lossless", description="转换模式"),
-    setting: int = Form(0, ge=0, le=100, description="质量参数")
+    setting: int = Form(75, ge=0, le=100, description="质量参数")
 ):
     """
     通过HTML表单上传并转换图像。
@@ -535,9 +613,9 @@ async def upload_convert(
     内部调用与 /convert/{format}/{mode}/{setting} 相同的转换逻辑。
 
     - **file**: 图像文件
-    - **target_format**: 目标格式 (avif, webp, jpeg, png, gif, heif)，默认 webp
-    - **mode**: 转换模式 (lossy, lossless)，默认 lossy
-    - **setting**: 质量/压缩参数 (0-100)，默认 80
+    - **target_format**: 目标格式 (avif, webp, jpeg, png, gif, heif)，默认 heif
+    - **mode**: 转换模式 (lossy, lossless)，默认 lossless
+    - **setting**: 质量/压缩参数 (0-100)，默认 75
     """
     # 验证参数
     valid_formats = ["avif", "webp", "jpeg", "png", "gif", "heif"]

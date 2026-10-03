@@ -22,7 +22,7 @@ GitHub 仓库 `BlueSkyXN/ImageMagickAPI-HFS` 是唯一的产品源码事实来�
 - `file`：必需的图像文件。
 - `target_format`：目标格式，默认 `heif`。
 - `mode`：`lossy` 或 `lossless`，默认 `lossless`。
-- `setting`：0–100 的质量或压缩速度参数，默认 `0`。
+- `setting`：0–100 的质量或压缩速度参数，默认 `75`；无损模式优先转换速度，显式设为 `0` 则选择慢速高压缩。
 
 ```bash
 curl -X POST http://localhost:8000/ \
@@ -64,7 +64,8 @@ curl --fail http://localhost:8000/health
 | local only | `TEMP_DIR` | 临时文件目录。 |
 | variables | `PORT`, `PYTHONUNBUFFERED` | 服务端口（默认 `8000`）和 Python 输出行为。 |
 | variables | `MAGICK_MEMORY_LIMIT`, `MAGICK_MAP_LIMIT`, `MAGICK_DISK_LIMIT`, `MAGICK_TIME_LIMIT`, `MAGICK_THREAD_LIMIT` | ImageMagick 资源限制。 |
-| variables | `WORKERS`, `MAX_CONCURRENT_PER_WORKER` | 默认为 `4` workers、每 worker `3` 个并发转换。 |
+| variables | `WORKERS`, `MAX_CONCURRENT_PER_WORKER` | 默认 `1` worker、每 worker `1` 个转换；默认单实例的信号量覆盖全部转换。多 worker 时总并发仍会乘以 worker 数。 |
+| variables | `ENCODER_THREADS` | 默认 `2`，范围 `1–64`。AOM 使用 `threads`，x265 使用线程池大小并将 frame threads 设为 `1`；不是进程总线程数的硬上限。 |
 | secrets | 无 | 当前服务没有已分类的运行时 secret。 |
 
 `hfs-dev.toml` 仅记录这些键名及 HFS v2 语义，绝不记录值或凭据。复制 `.env.example` 用于本地非敏感配置；不要提交 `.env` 或任何凭据文件。
@@ -76,7 +77,15 @@ docker build -t magick-api .
 docker run --rm -p 8000:8000 magick-api
 ```
 
-根 `Dockerfile` 保持产品本地运行路径。它使用 `PORT=8000`、全部既有 `MAGICK_*` 限制、`WORKERS=4` 和 `MAX_CONCURRENT_PER_WORKER=3`。
+根 `Dockerfile` 保持产品本地运行路径。它使用 `PORT=8000`、全部既有 `MAGICK_*` 限制、`WORKERS=1`、`MAX_CONCURRENT_PER_WORKER=1` 和 `ENCODER_THREADS=2`。
+
+### 大图、异步与并发
+
+默认配置优先让单张大图使用两个 CPU 核心，转换进程异步等待，文件复制在线程池中执行。上传解析完成后，排队、复制和所有编码阶段共享 300 秒预算；取消或超时时会终止并回收转换进程组，再清理临时文件。复制线程无法强制取消，因此清理会等待正在进行的复制完成。日志分别记录排队、复制、ImageMagick 和编码耗时。
+
+AVIF 固定使用 AOM，HEIF 固定使用 x265，避免不同默认编码器导致线程/速度参数失效。无损 `setting=0–100` 分别映射到 AOM `speed=0–8` 和 x265 `veryslow–ultrafast`；有损模式仍将 `setting` 作为质量，采用 AOM `speed=6` 或 x265 `medium`。PNG 中间文件使用低压缩级别，不改变像素，以降低重复压缩开销。AVIF/HEIF 保留既有静态首帧输出行为。
+
+若更重视同时服务两个用户，可测试 `WORKERS=1 MAX_CONCURRENT_PER_WORKER=2 ENCODER_THREADS=1 MAGICK_THREAD_LIMIT=1`。这只是 CPU 资源分配方式，不保证单张图片更快；不要在 2 vCPU 上恢复 12 个并行转换。
 
 ## Hugging Face Space：生成式 thin wrapper
 
@@ -114,7 +123,9 @@ mkdir /tmp/imagemagickapi-hfs-space
 
 静态检查以 AST 和 shell 语法解析运行，不导入应用且不写 Python bytecode；它还调用 `scripts/validate-hfs-contract.sh`，验证 HFS v2 TOML 精确语义、环境键分类、导出 allowlist、完整 SHA provenance、运行时约束、入口/健康检查、忽略边界和工作流安全边界。
 
-`.github/workflows/hfs-verify.yml` 会在 Pull Request 和 `main` 上执行这些检查，导出 wrapper、构建 Docker 镜像、启动容器并运行格式 smoke test。它不使用 secrets。`cloud/hfs/smoke-test.sh` 仅用 Python 标准库生成一个小 PNG，等待 `/health` 后测试 WebP、AVIF 和 HEIF 转换的成功 HTTP 状态、`Content-Type` 与 RIFF/WEBP 或 ISO-BMFF `ftyp`/兼容品牌。
+`.github/workflows/hfs-verify.yml` 会在 Pull Request 和 `main` 上执行这些检查，导出 wrapper、构建 Docker 镜像、运行异步/并发回归测试、启动容器并运行格式 smoke test。它不使用 secrets。`cloud/hfs/smoke-test.sh` 仅用 Python 标准库生成一个小 PNG，等待 `/health` 后检查首页以及 WebP、AVIF 和 HEIF 的有损/无损转换，包括编码速度端点；验证 HTTP 状态、`Content-Type` 与 RIFF/WEBP 或 ISO-BMFF `ftyp`/兼容品牌。
+
+安装 `requirements.txt` 后，可从仓库根目录运行 `python -B -m unittest discover -s tests -v`。这些测试不需要图像工具，覆盖编码参数、文件复制不阻塞、并发限制、总超时以及真实子进程取消/回收。
 
 `test_magick.py` 保留为历史手工测试脚本，未被自动化流程改写。
 

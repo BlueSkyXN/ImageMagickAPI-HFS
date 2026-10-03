@@ -39,6 +39,12 @@ jobs:
       - name: Build generated Space image
         run: docker build --tag "$IMAGE_NAME" "$BUNDLE_DIR"
 
+      - name: Run asynchronous conversion regression tests
+        run: |
+          docker run --rm --entrypoint python \
+            --volume "$PWD/tests:/app/tests:ro" "$IMAGE_NAME" \
+            -B -m unittest discover -s tests -v
+
       - name: Run generated Space image
         run: docker run --detach --name "$CONTAINER_NAME" --publish "$SMOKE_PORT:8000" "$IMAGE_NAME"
 
