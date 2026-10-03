@@ -1,15 +1,11 @@
-FROM python:3.10-slim AS imagemagick-build
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential pkg-config curl ca-certificates xz-utils \
-    libheif-dev libjpeg62-turbo-dev libpng-dev libwebp-dev libtiff-dev \
-    liblcms2-dev libxml2-dev libfreetype6-dev libbz2-dev liblzma-dev zlib1g-dev \
+FROM python:3.10-slim AS imagemagick-package
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-COPY scripts/build-imagemagick.sh /tmp/build-imagemagick.sh
-RUN sh /tmp/build-imagemagick.sh
+COPY scripts/install-imagemagick.sh /tmp/install-imagemagick.sh
+RUN sh /tmp/install-imagemagick.sh
 
 FROM python:3.10-slim
 ENV PATH=/opt/imagemagick/bin:$PATH
-ENV LD_LIBRARY_PATH=/opt/imagemagick/lib
 ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV TEMP_DIR=/app/temp
@@ -24,10 +20,10 @@ ENV ENCODER_THREADS=2
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libheif-examples libheif-plugin-aomenc libheif-plugin-x265 libheif-plugin-libde265 libheif-plugin-dav1d \
-    libheif1 libjpeg62-turbo libpng16-16t64 libwebp7 libwebpmux3 libwebpdemux2 \
-    libtiff6 liblcms2-2 libxml2 libfreetype6 libbz2-1.0 liblzma5 zlib1g libgomp1 \
+    libx11-6 libfontconfig1 libfreetype6 libfribidi0 libharfbuzz0b libstdc++6 zlib1g \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=imagemagick-build /opt/imagemagick /opt/imagemagick
+COPY --from=imagemagick-package /opt/imagemagick /opt/imagemagick
+RUN magick --version | grep -F 'ImageMagick 7.1.2-32 '
 
 WORKDIR /app
 COPY requirements.txt .
